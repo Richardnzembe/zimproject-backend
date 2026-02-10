@@ -41,7 +41,10 @@ DEBUG = os.getenv("DJANGO_DEBUG", "true").lower() == "true"
 if DEBUG and not SECRET_KEY:
     SECRET_KEY = "dev-insecure-change-me"
 
-ALLOWED_HOSTS = _env_list("DJANGO_ALLOWED_HOSTS", ["localhost", "127.0.0.1"])
+ALLOWED_HOSTS = _env_list(
+    "DJANGO_ALLOWED_HOSTS",
+    ["localhost", "127.0.0.1", "ree-backend.onrender.com"],
+)
 
 CSRF_TRUSTED_ORIGINS = _env_list("DJANGO_CSRF_TRUSTED_ORIGINS", [])
 
