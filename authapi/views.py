@@ -1,4 +1,5 @@
 import logging
+from django.db import DatabaseError, IntegrityError
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.contrib.auth.tokens import default_token_generator
@@ -23,6 +24,26 @@ logger = logging.getLogger(__name__)
 class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer
     permission_classes = [AllowAny]
+
+    def create(self, request, *args, **kwargs):
+        try:
+            return super().create(request, *args, **kwargs)
+        except IntegrityError:
+            return Response(
+                {"detail": "Username or email already exists."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except DatabaseError:
+            logger.exception("Database error during user registration")
+            return Response(
+                {
+                    "detail": (
+                        "Registration service is temporarily unavailable. "
+                        "Please retry shortly."
+                    )
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
 
 class PasswordResetRequestView(APIView):
