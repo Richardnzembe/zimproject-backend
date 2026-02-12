@@ -75,7 +75,14 @@ ALLOWED_HOSTS = _env_list(
     ["localhost", "127.0.0.1", "ree-backend.onrender.com"],
 )
 
-CSRF_TRUSTED_ORIGINS = _env_list("DJANGO_CSRF_TRUSTED_ORIGINS", [])
+CSRF_TRUSTED_ORIGINS = _env_list(
+    "DJANGO_CSRF_TRUSTED_ORIGINS",
+    [
+        "https://deluxe-syrniki-e613e6.netlify.app",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+)
 
 
 # Application definition
@@ -188,12 +195,14 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 CORS_ALLOWED_ORIGINS = _env_list(
     "DJANGO_CORS_ALLOWED_ORIGINS",
     [
+        "https://deluxe-syrniki-e613e6.netlify.app",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:5174",
         "http://127.0.0.1:5174",
     ],
 )
+CORS_ALLOW_CREDENTIALS = _env_bool("DJANGO_CORS_ALLOW_CREDENTIALS", False)
 
 # OpenRouter API
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
