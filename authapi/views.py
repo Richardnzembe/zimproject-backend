@@ -150,3 +150,22 @@ class UserProfileView(APIView):
                 "email": user.email,
             }
         )
+
+
+class AuthApiIndexView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        return Response(
+            {
+                "detail": "Auth API root",
+                "endpoints": {
+                    "register": "/api/auth/register/",
+                    "login": "/api/auth/login/",
+                    "refresh": "/api/auth/refresh/",
+                    "password_reset": "/api/auth/password-reset/",
+                    "password_reset_confirm": "/api/auth/password-reset/confirm/",
+                    "me": "/api/auth/me/",
+                },
+            }
+        )

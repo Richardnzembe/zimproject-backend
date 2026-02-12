@@ -358,3 +358,22 @@ class DeleteHistoryItemView(DestroyAPIView):
         if deleted:
             return Response({"detail": "History item deleted successfully."})
         return Response({"detail": "History item not found."}, status=404)
+
+
+class AiApiIndexView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return Response(
+            {
+                "detail": "AI API root",
+                "endpoints": {
+                    "study": "/api/ai/study/",
+                    "project": "/api/ai/project/",
+                    "general": "/api/ai/general/",
+                    "notes": "/api/ai/notes/",
+                    "history": "/api/ai/history/",
+                    "history_delete_all": "/api/ai/history/delete-all/",
+                },
+            }
+        )

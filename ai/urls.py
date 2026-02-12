@@ -1,7 +1,17 @@
 from django.urls import path
-from .views import StudyModeView, ProjectModeView, GeneralModeView, NotesAIView, ChatHistoryListView, DeleteAllHistoryView, DeleteHistoryItemView
+from .views import (
+    AiApiIndexView,
+    StudyModeView,
+    ProjectModeView,
+    GeneralModeView,
+    NotesAIView,
+    ChatHistoryListView,
+    DeleteAllHistoryView,
+    DeleteHistoryItemView,
+)
 
 urlpatterns = [
+    path("", AiApiIndexView.as_view()),
     path("study/", StudyModeView.as_view()),
     path("project/", ProjectModeView.as_view()),
     path("general/", GeneralModeView.as_view()),
