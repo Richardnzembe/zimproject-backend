@@ -51,6 +51,15 @@ def _env_int(name, default):
     except ValueError:
         return default
 
+
+def _database_url():
+    # Prefer pooled connection URLs for hosted environments (e.g., Render).
+    return (
+        os.getenv("DATABASE_POOL_URL")
+        or os.getenv("SUPABASE_POOLER_URL")
+        or os.getenv("DATABASE_URL")
+    )
+
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY") or os.getenv("SECRET_KEY", "")
 
@@ -139,11 +148,21 @@ WSGI_APPLICATION = 'zimproject_backend.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
+DB_URL = _database_url()
+
+if DB_URL and "supabase" in DB_URL and ".pooler.supabase.com" not in DB_URL:
+    warnings.warn(
+        "Detected a direct Supabase database URL. "
+        "If deployment runs on Render, prefer Supabase pooler URL on port 6543 "
+        "to avoid IPv6 connectivity issues.",
+        RuntimeWarning,
+    )
+
 DATABASES = {
     "default": dj_database_url.config(
-        default=os.environ.get("DATABASE_URL", f"sqlite:///{BASE_DIR / 'db.sqlite3'}"),
+        default=DB_URL or f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
         conn_max_age=600,
-        ssl_require=bool(os.environ.get("DATABASE_URL")),
+        ssl_require=bool(DB_URL),
     )
 }
 

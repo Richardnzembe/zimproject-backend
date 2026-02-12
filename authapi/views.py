@@ -1,4 +1,5 @@
 import logging
+import sys
 from django.db import DatabaseError, IntegrityError
 from django.conf import settings
 from django.contrib.auth.models import User
@@ -35,13 +36,18 @@ class RegisterView(generics.CreateAPIView):
             )
         except DatabaseError:
             logger.exception("Database error during user registration")
+            detail = (
+                "Registration service is temporarily unavailable. "
+                "Please retry shortly."
+            )
+            message = str(sys.exc_info()[1] or "").lower()
+            if "network is unreachable" in message and "supabase" in message:
+                detail = (
+                    "Database connection failed. Use a Supabase pooler URL "
+                    "(port 6543, sslmode=require) in Render environment variables."
+                )
             return Response(
-                {
-                    "detail": (
-                        "Registration service is temporarily unavailable. "
-                        "Please retry shortly."
-                    )
-                },
+                {"detail": detail},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
