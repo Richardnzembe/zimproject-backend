@@ -22,6 +22,36 @@ from .serializers import (
 logger = logging.getLogger(__name__)
 
 
+def _resolve_reset_url_base():
+    explicit = (getattr(settings, "PASSWORD_RESET_URL", "") or "").strip()
+    if explicit:
+        return explicit
+
+    frontend_base = (getattr(settings, "FRONTEND_BASE_URL", "") or "").strip()
+    if frontend_base:
+        return frontend_base
+
+    # Safe fallback to trusted origins configured for this deployment.
+    for source in (
+        getattr(settings, "CSRF_TRUSTED_ORIGINS", []),
+        getattr(settings, "CORS_ALLOWED_ORIGINS", []),
+    ):
+        for origin in source:
+            if isinstance(origin, str) and origin.startswith(("http://", "https://")):
+                return origin.rstrip("/")
+    return ""
+
+
+def _build_reset_link(user):
+    uid = urlsafe_base64_encode(force_bytes(user.pk))
+    token = default_token_generator.make_token(user)
+    base = _resolve_reset_url_base()
+    if not base:
+        return ""
+    separator = "&" if "?" in base else "?"
+    return f"{base}{separator}uid={uid}&token={token}"
+
+
 class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer
     permission_classes = [AllowAny]
@@ -62,10 +92,7 @@ class PasswordResetRequestView(APIView):
 
         user = User.objects.filter(email__iexact=email).first()
         if user:
-            uid = urlsafe_base64_encode(force_bytes(user.pk))
-            token = default_token_generator.make_token(user)
-            reset_url_base = getattr(settings, "PASSWORD_RESET_URL", "")
-            reset_link = f"{reset_url_base}?uid={uid}&token={token}" if reset_url_base else ""
+            reset_link = _build_reset_link(user)
 
             subject = "Password reset request"
             if reset_link:
@@ -76,12 +103,14 @@ class PasswordResetRequestView(APIView):
             else:
                 message = (
                     "You requested a password reset. "
-                    "Please contact support because the reset link is not configured."
+                    "Please contact support because reset URL configuration is missing."
                 )
 
             try:
                 if not reset_link:
-                    logger.warning("PASSWORD_RESET_URL not configured; email will omit link.")
+                    logger.error(
+                        "Password reset email link not generated. Configure PASSWORD_RESET_URL or FRONTEND_BASE_URL."
+                    )
                 send_mail(
                     subject=subject,
                     message=message,
