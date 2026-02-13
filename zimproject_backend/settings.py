@@ -241,6 +241,22 @@ DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "no-reply@zimproject.local"
 PASSWORD_RESET_URL = os.getenv("PASSWORD_RESET_URL", "")
 FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "")
 
+# Normalize SMTP transport flags to avoid STARTTLS/SSL mismatch failures.
+if EMAIL_USE_TLS and EMAIL_USE_SSL:
+    warnings.warn(
+        "Both EMAIL_USE_TLS and EMAIL_USE_SSL are enabled; disabling EMAIL_USE_TLS.",
+        RuntimeWarning,
+    )
+    EMAIL_USE_TLS = False
+if EMAIL_PORT == 465 and EMAIL_USE_TLS and not EMAIL_USE_SSL:
+    warnings.warn(
+        "EMAIL_PORT=465 detected with EMAIL_USE_TLS=True. "
+        "Switching to EMAIL_USE_SSL=True and EMAIL_USE_TLS=False.",
+        RuntimeWarning,
+    )
+    EMAIL_USE_TLS = False
+    EMAIL_USE_SSL = True
+
 from datetime import timedelta
 
 SIMPLE_JWT = {
