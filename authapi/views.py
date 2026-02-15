@@ -1,11 +1,12 @@
 import logging
 import sys
 import smtplib
+import threading
 from django.db import DatabaseError, IntegrityError
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.contrib.auth.tokens import default_token_generator
-from django.core.mail import send_mail
+from django.core.mail import send_mail, get_connection
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from rest_framework import generics, status
@@ -69,6 +70,26 @@ def _email_error_detail(exc):
     return "Email service error"
 
 
+def _send_password_reset_email(recipient, subject, message):
+    timeout = getattr(settings, "EMAIL_TIMEOUT", 20)
+    try:
+        connection = get_connection(timeout=timeout)
+        send_mail(
+            subject=subject,
+            message=message,
+            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
+            recipient_list=[recipient],
+            fail_silently=False,
+            connection=connection,
+        )
+    except Exception as exc:
+        logger.exception(
+            "Failed to send password reset email to %s: %s",
+            recipient,
+            _email_error_detail(exc),
+        )
+
+
 class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer
     permission_classes = [AllowAny]
@@ -123,24 +144,18 @@ class PasswordResetRequestView(APIView):
                     "Please contact support because reset URL configuration is missing."
                 )
 
-            try:
-                if not reset_link:
-                    logger.error(
-                        "Password reset email link not generated. Configure PASSWORD_RESET_URL or FRONTEND_BASE_URL."
-                    )
-                send_mail(
-                    subject=subject,
-                    message=message,
-                    from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
-                    recipient_list=[user.email],
-                    fail_silently=False,
+            if not reset_link:
+                logger.error(
+                    "Password reset email link not generated. Configure PASSWORD_RESET_URL or FRONTEND_BASE_URL."
                 )
-            except Exception as exc:
-                logger.exception("Failed to send password reset email")
-                return Response(
-                    {"detail": _email_error_detail(exc)},
-                    status=status.HTTP_502_BAD_GATEWAY,
-                )
+
+            # Dispatch email in a daemon thread so SMTP network hangs do not block request workers.
+            thread = threading.Thread(
+                target=_send_password_reset_email,
+                args=(user.email, subject, message),
+                daemon=True,
+            )
+            thread.start()
 
         return Response(
             {"detail": "If an account exists for this email, a reset link has been sent."}
