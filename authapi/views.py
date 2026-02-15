@@ -1,5 +1,6 @@
 import logging
 import sys
+import smtplib
 from django.db import DatabaseError, IntegrityError
 from django.conf import settings
 from django.contrib.auth.models import User
@@ -50,6 +51,22 @@ def _build_reset_link(user):
         return ""
     separator = "&" if "?" in base else "?"
     return f"{base}{separator}uid={uid}&token={token}"
+
+
+def _email_error_detail(exc):
+    if isinstance(exc, smtplib.SMTPAuthenticationError):
+        return "Email service authentication failed. Check SMTP username/password."
+    if isinstance(exc, smtplib.SMTPServerDisconnected):
+        return "Email service connection failed. Check SMTP host/port and TLS/SSL settings."
+    if isinstance(exc, smtplib.SMTPConnectError):
+        return "Email service is unreachable. Check SMTP host/port."
+    if isinstance(exc, smtplib.SMTPRecipientsRefused):
+        return "Recipient was rejected by email provider."
+    if isinstance(exc, smtplib.SMTPDataError):
+        return "Email provider rejected the message data."
+    if isinstance(exc, smtplib.SMTPException):
+        return "SMTP error while sending password reset email."
+    return "Email service error"
 
 
 class RegisterView(generics.CreateAPIView):
@@ -118,10 +135,10 @@ class PasswordResetRequestView(APIView):
                     recipient_list=[user.email],
                     fail_silently=False,
                 )
-            except Exception:
+            except Exception as exc:
                 logger.exception("Failed to send password reset email")
                 return Response(
-                    {"detail": "Email service error"},
+                    {"detail": _email_error_detail(exc)},
                     status=status.HTTP_502_BAD_GATEWAY,
                 )
 
