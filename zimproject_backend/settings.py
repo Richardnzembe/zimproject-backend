@@ -240,6 +240,8 @@ EMAIL_TIMEOUT = _env_int("EMAIL_TIMEOUT", 20)
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "no-reply@zimproject.local")
 PASSWORD_RESET_URL = os.getenv("PASSWORD_RESET_URL", "")
 FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "")
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+RESEND_FROM_EMAIL = os.getenv("RESEND_FROM_EMAIL", "")
 
 # Normalize SMTP transport flags to avoid STARTTLS/SSL mismatch failures.
 if EMAIL_USE_TLS and EMAIL_USE_SSL:

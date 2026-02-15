@@ -2,6 +2,10 @@ import logging
 import sys
 import smtplib
 import threading
+import socket
+import json
+from urllib import request as urlrequest
+from urllib import error as urlerror
 from django.db import DatabaseError, IntegrityError
 from django.conf import settings
 from django.contrib.auth.models import User
@@ -55,6 +59,8 @@ def _build_reset_link(user):
 
 
 def _email_error_detail(exc):
+    if isinstance(exc, (TimeoutError, socket.timeout)):
+        return "Email service timed out."
     if isinstance(exc, smtplib.SMTPAuthenticationError):
         return "Email service authentication failed. Check SMTP username/password."
     if isinstance(exc, smtplib.SMTPServerDisconnected):
@@ -67,12 +73,57 @@ def _email_error_detail(exc):
         return "Email provider rejected the message data."
     if isinstance(exc, smtplib.SMTPException):
         return "SMTP error while sending password reset email."
+    if isinstance(exc, urlerror.HTTPError):
+        return f"Email API rejected the request ({exc.code})."
+    if isinstance(exc, urlerror.URLError):
+        return "Email API connection failed."
     return "Email service error"
 
 
-def _send_password_reset_email(recipient, subject, message):
+def _send_password_reset_email_via_resend(recipient, subject, message):
+    api_key = (getattr(settings, "RESEND_API_KEY", "") or "").strip()
+    if not api_key:
+        raise ValueError("RESEND_API_KEY not configured")
+
+    from_email = (
+        (getattr(settings, "RESEND_FROM_EMAIL", "") or "").strip()
+        or (getattr(settings, "DEFAULT_FROM_EMAIL", "") or "").strip()
+    )
+    if not from_email:
+        raise ValueError("Sender email not configured")
+
     timeout = getattr(settings, "EMAIL_TIMEOUT", 20)
+    payload = {
+        "from": from_email,
+        "to": [recipient],
+        "subject": subject,
+        "text": message,
+    }
+    body = json.dumps(payload).encode("utf-8")
+    req = urlrequest.Request(
+        url="https://api.resend.com/emails",
+        data=body,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+    )
+
+    with urlrequest.urlopen(req, timeout=timeout) as resp:
+        status_code = getattr(resp, "status", 200)
+        if status_code >= 400:
+            raise RuntimeError(f"Resend API returned status {status_code}")
+
+
+def _send_password_reset_email(recipient, subject, message):
     try:
+        # Prefer Resend HTTPS API to avoid SMTP socket timeouts in hosted environments.
+        if (getattr(settings, "RESEND_API_KEY", "") or "").strip():
+            _send_password_reset_email_via_resend(recipient, subject, message)
+            return
+
+        timeout = getattr(settings, "EMAIL_TIMEOUT", 20)
         connection = get_connection(timeout=timeout)
         send_mail(
             subject=subject,
