@@ -8,8 +8,15 @@ from rest_framework import status
 
 from ai.models import ChatHistory
 from notes.models import Note
+from tasks.models import Task
 from .models import ShareLink, ShareMember, ShareInvite
-from .serializers import ShareLinkSerializer, ShareMemberSerializer, NoteSummarySerializer, ShareInviteSerializer
+from .serializers import (
+    ShareLinkSerializer,
+    ShareMemberSerializer,
+    NoteSummarySerializer,
+    TaskSummarySerializer,
+    ShareInviteSerializer,
+)
 from ai.views import (
     _chat,
     _extract_text,
@@ -78,8 +85,9 @@ class ShareLinkCreateView(APIView):
         permission = request.data.get("permission", "read")
         session_id = request.data.get("session_id")
         note_id = request.data.get("note_id")
+        task_id = request.data.get("task_id")
 
-        if resource_type not in ("chat", "note"):
+        if resource_type not in ("chat", "note", "task"):
             return Response({"detail": "Invalid resource_type."}, status=400)
         if permission not in ("read", "collab"):
             return Response({"detail": "Invalid permission."}, status=400)
@@ -112,7 +120,7 @@ class ShareLinkCreateView(APIView):
                     session_id=session_id,
                     permission=permission,
                 )
-        else:
+        elif resource_type == "note":
             if not note_id:
                 return Response({"detail": "note_id is required for note."}, status=400)
             try:
@@ -133,6 +141,27 @@ class ShareLinkCreateView(APIView):
                     note=note,
                     permission=permission,
                 )
+        else:
+            if not task_id:
+                return Response({"detail": "task_id is required for task."}, status=400)
+            try:
+                task = Task.objects.get(id=task_id, user=request.user)
+            except Task.DoesNotExist:
+                return Response({"detail": "Task not found."}, status=404)
+            share = ShareLink.objects.filter(
+                created_by=request.user,
+                resource_type="task",
+                task=task,
+                permission=permission,
+                revoked_at__isnull=True,
+            ).first()
+            if not share:
+                share = ShareLink.objects.create(
+                    created_by=request.user,
+                    resource_type="task",
+                    task=task,
+                    permission=permission,
+                )
 
         data = ShareLinkSerializer(share).data
         data["members"] = _share_members_payload(share)
@@ -146,6 +175,7 @@ class ShareLinkListView(APIView):
         resource_type = request.query_params.get("resource_type")
         session_id = request.query_params.get("session_id")
         note_id = request.query_params.get("note_id")
+        task_id = request.query_params.get("task_id")
 
         qs = ShareLink.objects.filter(created_by=request.user, revoked_at__isnull=True)
         if resource_type:
@@ -154,6 +184,8 @@ class ShareLinkListView(APIView):
             qs = qs.filter(session_id=session_id)
         if note_id:
             qs = qs.filter(note_id=note_id)
+        if task_id:
+            qs = qs.filter(task_id=task_id)
 
         data = ShareLinkSerializer(qs, many=True).data
         return Response(data)
@@ -181,9 +213,12 @@ class ShareLinkDetailView(APIView):
 
         if share.resource_type == "chat":
             payload["messages"] = _chat_messages_for_session(share.session_id)
-        else:
+        elif share.resource_type == "note":
             note = share.note
             payload["note"] = NoteSummarySerializer(note).data if note else None
+        else:
+            task = share.task
+            payload["task"] = TaskSummarySerializer(task).data if task else None
 
         payload["owner"] = {"id": share.created_by.id, "username": share.created_by.username}
         return Response(payload)
@@ -353,6 +388,42 @@ class SharedNoteView(APIView):
         note.save()
 
         return Response({"note": NoteSummarySerializer(note).data})
+
+
+class SharedTaskView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, token):
+        share = _get_active_share(token)
+        if not share or share.resource_type != "task" or not share.task:
+            return _share_not_found()
+        if share.created_by != request.user and not ShareMember.objects.filter(share=share, user=request.user).exists():
+            return Response({"detail": "Not allowed."}, status=403)
+        task = share.task
+        return Response({
+            "task": TaskSummarySerializer(task).data,
+            "permission": share.permission,
+        })
+
+    def put(self, request, token):
+        share = _get_active_share(token)
+        if not share or share.resource_type != "task" or not share.task:
+            return _share_not_found()
+        if share.permission != "collab":
+            return Response({"detail": "Read-only share."}, status=403)
+        if share.created_by != request.user and not ShareMember.objects.filter(share=share, user=request.user).exists():
+            return Response({"detail": "Not allowed."}, status=403)
+
+        task = share.task
+        data = request.data or {}
+        task.title = data.get("title", task.title)
+        task.description = data.get("description", task.description)
+        task.is_completed = data.get("is_completed", task.is_completed)
+        task.priority = data.get("priority", task.priority)
+        task.due_date = data.get("due_date", task.due_date)
+        task.save()
+
+        return Response({"task": TaskSummarySerializer(task).data})
 
 
 class ShareInviteCreateView(APIView):

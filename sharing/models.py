@@ -2,12 +2,14 @@ import uuid
 from django.db import models
 from django.contrib.auth.models import User
 from notes.models import Note
+from tasks.models import Task
 
 
 class ShareLink(models.Model):
     RESOURCE_CHOICES = (
         ("chat", "Chat"),
         ("note", "Note"),
+        ("task", "Task"),
     )
     PERMISSION_CHOICES = (
         ("read", "Read"),
@@ -18,6 +20,7 @@ class ShareLink(models.Model):
     resource_type = models.CharField(max_length=12, choices=RESOURCE_CHOICES)
     session_id = models.CharField(max_length=64, null=True, blank=True, db_index=True)
     note = models.ForeignKey(Note, null=True, blank=True, on_delete=models.CASCADE)
+    task = models.ForeignKey(Task, null=True, blank=True, on_delete=models.CASCADE)
     created_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name="share_links")
     permission = models.CharField(max_length=12, choices=PERMISSION_CHOICES, default="read")
     created_at = models.DateTimeField(auto_now_add=True)

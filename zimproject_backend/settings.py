@@ -110,6 +110,7 @@ INSTALLED_APPS = [
     'authapi',
     'users',
     'notes',
+    'tasks',
     'ai',
     'sharing',
 ]

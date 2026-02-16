@@ -2,6 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth.models import User
 from .models import ShareLink, ShareMember, ShareInvite
 from notes.models import Note
+from tasks.models import Task
 
 
 class UserSummarySerializer(serializers.ModelSerializer):
@@ -23,7 +24,7 @@ class ShareLinkSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ShareLink
-        fields = ["token", "resource_type", "session_id", "note", "permission", "created_at", "members"]
+        fields = ["token", "resource_type", "session_id", "note", "task", "permission", "created_at", "members"]
 
 
 class ShareInviteSerializer(serializers.ModelSerializer):
@@ -39,3 +40,9 @@ class NoteSummarySerializer(serializers.ModelSerializer):
     class Meta:
         model = Note
         fields = ["id", "title", "subject", "category", "tags", "content", "created_at"]
+
+
+class TaskSummarySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Task
+        fields = ["id", "title", "description", "is_completed", "priority", "due_date", "created_at", "updated_at"]
