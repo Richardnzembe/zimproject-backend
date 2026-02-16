@@ -56,7 +56,14 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
 
 
 class SetPasswordSerializer(serializers.Serializer):
+    old_password = serializers.CharField(write_only=True)
     new_password = serializers.CharField(write_only=True)
+
+    def validate_old_password(self, value):
+        user = self.context.get("user")
+        if not user or not user.check_password(value):
+            raise serializers.ValidationError("Current password is incorrect.")
+        return value
 
     def validate_new_password(self, value):
         validate_password(value)

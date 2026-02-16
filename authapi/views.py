@@ -244,7 +244,7 @@ class SetPasswordView(APIView):
     authentication_classes = [JWTAuthentication]
 
     def post(self, request):
-        serializer = SetPasswordSerializer(data=request.data)
+        serializer = SetPasswordSerializer(data=request.data, context={"user": request.user})
         serializer.is_valid(raise_exception=True)
 
         user = request.user
