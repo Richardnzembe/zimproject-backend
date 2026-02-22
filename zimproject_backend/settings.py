@@ -113,6 +113,7 @@ INSTALLED_APPS = [
     'tasks',
     'ai',
     'sharing',
+    'notifications',
 ]
 
 MIDDLEWARE = [
@@ -273,12 +274,17 @@ REST_FRAMEWORK = {
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
     "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
         "rest_framework.throttling.UserRateThrottle",
     ],
     "DEFAULT_THROTTLE_RATES": {
+        "anon": "30/min",
         "user": "20/min",   # change later
     },
 }
+
+NOTIFICATIONS_TASK_DUE_SOON_MINUTES = _env_int("NOTIFICATIONS_TASK_DUE_SOON_MINUTES", 15)
+NOTIFICATIONS_STUDY_REMINDER_MINUTES = _env_int("NOTIFICATIONS_STUDY_REMINDER_MINUTES", 90)
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 USE_X_FORWARDED_HOST = True

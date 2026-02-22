@@ -20,7 +20,16 @@ class RegisterSerializer(serializers.ModelSerializer):
         fields = ['username', 'email', 'password', 'password_confirm']
 
     def validate_email(self, value):
-        return value.strip().lower()
+        cleaned = value.strip().lower()
+        if User.objects.filter(email__iexact=cleaned).exists():
+            raise serializers.ValidationError("A user with this email already exists.")
+        return cleaned
+
+    def validate_username(self, value):
+        cleaned = value.strip()
+        if not cleaned:
+            raise serializers.ValidationError("Username is required.")
+        return cleaned
 
     def validate_password(self, value):
         validate_password(value)
