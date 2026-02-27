@@ -14,6 +14,7 @@ from pathlib import Path
 import os
 import warnings
 import dj_database_url
+from corsheaders.defaults import default_headers
 from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -218,6 +219,10 @@ CORS_ALLOWED_ORIGINS = _env_list(
     ],
 )
 CORS_ALLOW_CREDENTIALS = _env_bool("DJANGO_CORS_ALLOW_CREDENTIALS", True)
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    "x-openrouter-key",
+    "x-openrouter-base",
+]
 
 # OpenRouter API
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")

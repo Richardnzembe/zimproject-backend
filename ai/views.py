@@ -11,16 +11,25 @@ from .serializers import ChatHistorySerializer
 logger = logging.getLogger(__name__)
 
 
-def _get_client():
-    api_key = getattr(settings, "OPENROUTER_API_KEY", None)
+def _get_client(request=None):
+    api_key = None
     base_url = getattr(settings, "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+
+    if request is not None:
+        api_key = request.headers.get("X-OpenRouter-Key") or request.headers.get("x-openrouter-key")
+        base_override = request.headers.get("X-OpenRouter-Base") or request.headers.get("x-openrouter-base")
+        if base_override:
+            base_url = base_override
+
+    if not api_key:
+        api_key = getattr(settings, "OPENROUTER_API_KEY", None)
     if not api_key:
         return None
     return OpenAI(api_key=api_key, base_url=base_url)
 
 
-def _chat(messages, model=None, temperature=0.7):
-    client = _get_client()
+def _chat(messages, model=None, temperature=0.7, request=None):
+    client = _get_client(request=request)
     if client is None:
         raise RuntimeError("OpenRouter API key missing")
 
@@ -178,7 +187,8 @@ class StudyModeView(APIView):
                     {"role": "system", "content": system_prompt},
                     *history,
                     {"role": "user", "content": notes},
-                ]
+                ],
+                request=request,
             )
         except Exception:
             logger.exception("AI request failed")
@@ -242,7 +252,8 @@ class ProjectModeView(APIView):
                     *history,
                     {"role": "user", "content": prompt},
                     {"role": "user", "content": "\n".join(user_context) if user_context else "No extra context provided."},
-                ]
+                ],
+                request=request,
             )
         except Exception:
             logger.exception("AI request failed")
@@ -281,7 +292,8 @@ class GeneralModeView(APIView):
                     },
                     *history,
                     {"role": "user", "content": question},
-                ]
+                ],
+                request=request,
             )
         except Exception:
             logger.exception("AI request failed")
@@ -317,7 +329,8 @@ class NotesAIView(APIView):
                 [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": note_content},
-                ]
+                ],
+                request=request,
             )
         except Exception:
             logger.exception("AI request failed")
