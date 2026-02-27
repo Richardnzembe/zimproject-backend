@@ -5,6 +5,7 @@ from rest_framework.test import APITestCase
 
 from sharing.models import ShareLink, ShareMember
 from tasks.models import Task
+from notifications.models import Notification
 
 
 @override_settings(SECURE_SSL_REDIRECT=False)
@@ -61,3 +62,23 @@ class TaskSharingTests(APITestCase):
         self.assertTrue(self.task.is_completed)
         self.assertEqual(self.task.priority, "high")
 
+    def test_invite_creates_recipient_notification(self):
+        share = ShareLink.objects.create(
+            resource_type="task",
+            task=self.task,
+            permission="read",
+            created_by=self.owner,
+        )
+        self.client.force_authenticate(self.owner)
+        res = self.client.post(
+            f"/api/share/links/{share.token}/invite/",
+            {"username": self.collaborator.username},
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertTrue(
+            Notification.objects.filter(
+                user=self.collaborator,
+                kind=Notification.KIND_SHARE_INVITE,
+            ).exists()
+        )

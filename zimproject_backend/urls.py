@@ -8,4 +8,5 @@ urlpatterns = [
     path('api/notes/', include('notes.urls')),
     path('api/tasks/', include('tasks.urls')),
     path('api/share/', include('sharing.urls')),
+    path('api/notifications/', include('notifications.urls')),
 ]

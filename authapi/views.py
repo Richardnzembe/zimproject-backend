@@ -11,6 +11,7 @@ from django.conf import settings
 from django.contrib.auth.models import User
 from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import send_mail, get_connection
+from django.middleware.csrf import get_token
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from rest_framework import generics, status
@@ -18,6 +19,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from .serializers import (
     RegisterSerializer,
     PasswordResetRequestSerializer,
@@ -26,6 +28,38 @@ from .serializers import (
 )
 
 logger = logging.getLogger(__name__)
+
+def _set_auth_cookies(response, access_token=None, refresh_token=None):
+    secure = bool(getattr(settings, "AUTH_COOKIE_SECURE", True))
+    samesite = getattr(settings, "AUTH_COOKIE_SAMESITE", "None")
+    access_name = getattr(settings, "AUTH_COOKIE_ACCESS", "smart_notes_access")
+    refresh_name = getattr(settings, "AUTH_COOKIE_REFRESH", "smart_notes_refresh")
+
+    if access_token:
+        response.set_cookie(
+            access_name,
+            access_token,
+            httponly=True,
+            secure=secure,
+            samesite=samesite,
+            path="/",
+        )
+    if refresh_token:
+        response.set_cookie(
+            refresh_name,
+            refresh_token,
+            httponly=True,
+            secure=secure,
+            samesite=samesite,
+            path="/",
+        )
+
+
+def _clear_auth_cookies(response):
+    access_name = getattr(settings, "AUTH_COOKIE_ACCESS", "smart_notes_access")
+    refresh_name = getattr(settings, "AUTH_COOKIE_REFRESH", "smart_notes_refresh")
+    response.delete_cookie(access_name, path="/")
+    response.delete_cookie(refresh_name, path="/")
 
 
 def _resolve_reset_url_base():
@@ -144,6 +178,7 @@ def _send_password_reset_email(recipient, subject, message):
 class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer
     permission_classes = [AllowAny]
+    authentication_classes = []
 
     def create(self, request, *args, **kwargs):
         try:
@@ -171,8 +206,78 @@ class RegisterView(generics.CreateAPIView):
             )
 
 
+class CsrfTokenView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        return Response({"csrfToken": get_token(request)})
+
+
+class CookieTokenObtainPairView(TokenObtainPairView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request, *args, **kwargs):
+        response = super().post(request, *args, **kwargs)
+        if response.status_code != status.HTTP_200_OK:
+            return response
+        payload = response.data or {}
+        _set_auth_cookies(
+            response,
+            access_token=payload.get("access"),
+            refresh_token=payload.get("refresh"),
+        )
+        # Keep refresh token out of JS-visible payload.
+        if isinstance(payload, dict) and "refresh" in payload:
+            payload.pop("refresh", None)
+            response.data = payload
+        return response
+
+
+class CookieTokenRefreshView(TokenRefreshView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request, *args, **kwargs):
+        refresh_cookie_name = getattr(settings, "AUTH_COOKIE_REFRESH", "smart_notes_refresh")
+        request_data = request.data.copy()
+        if not request_data.get("refresh"):
+            cookie_refresh = request.COOKIES.get(refresh_cookie_name)
+            if cookie_refresh:
+                request_data["refresh"] = cookie_refresh
+        request._full_data = request_data
+
+        response = super().post(request, *args, **kwargs)
+        if response.status_code != status.HTTP_200_OK:
+            _clear_auth_cookies(response)
+            return response
+
+        payload = response.data or {}
+        _set_auth_cookies(
+            response,
+            access_token=payload.get("access"),
+            refresh_token=payload.get("refresh"),
+        )
+        if isinstance(payload, dict) and "refresh" in payload:
+            payload.pop("refresh", None)
+            response.data = payload
+        return response
+
+
+class LogoutView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request):
+        response = Response({"detail": "Logged out."})
+        _clear_auth_cookies(response)
+        return response
+
+
 class PasswordResetRequestView(APIView):
     permission_classes = [AllowAny]
+    authentication_classes = []
 
     def post(self, request):
         serializer = PasswordResetRequestSerializer(data=request.data)
@@ -215,6 +320,7 @@ class PasswordResetRequestView(APIView):
 
 class PasswordResetConfirmView(APIView):
     permission_classes = [AllowAny]
+    authentication_classes = []
 
     def post(self, request):
         serializer = PasswordResetConfirmSerializer(data=request.data)
@@ -293,15 +399,18 @@ class UserProfileView(APIView):
 
 class AuthApiIndexView(APIView):
     permission_classes = [AllowAny]
+    authentication_classes = []
 
     def get(self, request):
         return Response(
             {
                 "detail": "Auth API root",
                 "endpoints": {
+                    "csrf": "/api/auth/csrf/",
                     "register": "/api/auth/register/",
                     "login": "/api/auth/login/",
                     "refresh": "/api/auth/refresh/",
+                    "logout": "/api/auth/logout/",
                     "password_reset": "/api/auth/password-reset/",
                     "password_reset_confirm": "/api/auth/password-reset/confirm/",
                     "me": "/api/auth/me/",

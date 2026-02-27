@@ -26,6 +26,8 @@ from ai.views import (
     _originality_rules,
     _project_subject_rules,
 )
+from notifications.models import Notification
+from notifications.services import create_notification
 
 
 def _share_not_found():
@@ -34,8 +36,13 @@ def _share_not_found():
 
 def _get_active_share(token):
     try:
-        share = ShareLink.objects.get(token=token, revoked_at__isnull=True)
+        share = ShareLink.objects.get(
+            token=token,
+            revoked_at__isnull=True,
+        )
     except ShareLink.DoesNotExist:
+        return None
+    if share.expires_at and share.expires_at <= timezone.now():
         return None
     return share
 
@@ -45,9 +52,12 @@ def _share_members_payload(share):
     return ShareMemberSerializer(members, many=True).data
 
 
-def _chat_messages_for_session(session_id):
+def _chat_messages_for_session(share):
     items = (
-        ChatHistory.objects.filter(input_data__session_id=session_id)
+        ChatHistory.objects.filter(
+            user=share.created_by,
+            input_data__session_id=share.session_id,
+        )
         .select_related("user")
         .order_by("created_at")
     )
@@ -112,6 +122,7 @@ class ShareLinkCreateView(APIView):
                 session_id=session_id,
                 permission=permission,
                 revoked_at__isnull=True,
+                expires_at__gt=timezone.now(),
             ).first()
             if not share:
                 share = ShareLink.objects.create(
@@ -133,6 +144,7 @@ class ShareLinkCreateView(APIView):
                 note=note,
                 permission=permission,
                 revoked_at__isnull=True,
+                expires_at__gt=timezone.now(),
             ).first()
             if not share:
                 share = ShareLink.objects.create(
@@ -154,6 +166,7 @@ class ShareLinkCreateView(APIView):
                 task=task,
                 permission=permission,
                 revoked_at__isnull=True,
+                expires_at__gt=timezone.now(),
             ).first()
             if not share:
                 share = ShareLink.objects.create(
@@ -212,7 +225,7 @@ class ShareLinkDetailView(APIView):
         payload["members"] = _share_members_payload(share)
 
         if share.resource_type == "chat":
-            payload["messages"] = _chat_messages_for_session(share.session_id)
+            payload["messages"] = _chat_messages_for_session(share)
         elif share.resource_type == "note":
             note = share.note
             payload["note"] = NoteSummarySerializer(note).data if note else None
@@ -270,7 +283,7 @@ class SharedChatView(APIView):
         if share.created_by != request.user and not ShareMember.objects.filter(share=share, user=request.user).exists():
             return Response({"detail": "Not allowed."}, status=403)
         return Response({
-            "messages": _chat_messages_for_session(share.session_id),
+            "messages": _chat_messages_for_session(share),
             "permission": share.permission,
         })
 
@@ -292,7 +305,10 @@ class SharedChatView(APIView):
             return Response({"detail": "Message is required."}, status=400)
 
         history_items = (
-            ChatHistory.objects.filter(input_data__session_id=share.session_id)
+            ChatHistory.objects.filter(
+                user=share.created_by,
+                input_data__session_id=share.session_id,
+            )
             .order_by("created_at")
         )
         history = []
@@ -345,9 +361,14 @@ class SharedChatView(APIView):
         response_text = _extract_text(completion)
 
         ChatHistory.objects.create(
-            user=request.user,
+            user=share.created_by,
             mode=mode,
-            input_data={"question": message, "session_id": share.session_id},
+            input_data={
+                "question": message,
+                "session_id": share.session_id,
+                "shared_by": request.user.username,
+                "shared_by_id": request.user.id,
+            },
             response_text=response_text,
         )
 
@@ -458,6 +479,20 @@ class ShareInviteCreateView(APIView):
             invite.invited_by = request.user
             invite.responded_at = None
             invite.save(update_fields=["status", "invited_by", "responded_at"])
+
+        create_notification(
+            user=invited_user,
+            kind=Notification.KIND_SHARE_INVITE,
+            title="New Share Invite",
+            message=f"{request.user.username} invited you to a {share.resource_type}.",
+            data={
+                "invite_id": invite.id,
+                "resource_type": share.resource_type,
+                "share_token": str(share.token),
+            },
+            source_key=f"share-invite:{invite.id}",
+            created_at=invite.created_at,
+        )
 
         return Response({"detail": "Invite sent.", "invite_id": invite.id})
 

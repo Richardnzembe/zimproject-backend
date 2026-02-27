@@ -24,7 +24,7 @@ class ShareLinkSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ShareLink
-        fields = ["token", "resource_type", "session_id", "note", "task", "permission", "created_at", "members"]
+        fields = ["token", "resource_type", "session_id", "note", "task", "permission", "created_at", "expires_at", "members"]
 
 
 class ShareInviteSerializer(serializers.ModelSerializer):

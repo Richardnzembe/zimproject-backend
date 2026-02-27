@@ -14,6 +14,7 @@ from pathlib import Path
 import os
 import warnings
 import dj_database_url
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -70,14 +71,9 @@ if not SECRET_KEY:
     if DEBUG:
         SECRET_KEY = "dev-insecure-change-me"
     else:
-        # Keep the process alive if the env var is missing, but warn loudly.
-        from django.core.management.utils import get_random_secret_key
-
-        SECRET_KEY = get_random_secret_key()
-        warnings.warn(
+        raise ImproperlyConfigured(
             "DJANGO_SECRET_KEY is missing in non-debug mode. "
-            "Using an ephemeral key; configure DJANGO_SECRET_KEY for production.",
-            RuntimeWarning,
+            "Set DJANGO_SECRET_KEY before starting the server."
         )
 
 ALLOWED_HOSTS = _env_list(
@@ -89,6 +85,8 @@ CSRF_TRUSTED_ORIGINS = _env_list(
     "DJANGO_CSRF_TRUSTED_ORIGINS",
     [
         "https://deluxe-syrniki-e613e6.netlify.app",
+        "https://zimproject-frontend.nzemberichard398.workers.dev",
+        "https://zimproject-frontend.pages.dev",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
     ],
@@ -211,13 +209,15 @@ CORS_ALLOWED_ORIGINS = _env_list(
     "DJANGO_CORS_ALLOWED_ORIGINS",
     [
         "https://deluxe-syrniki-e613e6.netlify.app",
+        "https://zimproject-frontend.nzemberichard398.workers.dev",
+        "https://zimproject-frontend.pages.dev",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:5174",
         "http://127.0.0.1:5174",
     ],
 )
-CORS_ALLOW_CREDENTIALS = _env_bool("DJANGO_CORS_ALLOW_CREDENTIALS", False)
+CORS_ALLOW_CREDENTIALS = _env_bool("DJANGO_CORS_ALLOW_CREDENTIALS", True)
 
 # OpenRouter API
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
@@ -269,8 +269,14 @@ SIMPLE_JWT = {
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
+AUTH_COOKIE_ACCESS = os.getenv("DJANGO_AUTH_COOKIE_ACCESS", "smart_notes_access")
+AUTH_COOKIE_REFRESH = os.getenv("DJANGO_AUTH_COOKIE_REFRESH", "smart_notes_refresh")
+AUTH_COOKIE_SAMESITE = os.getenv("DJANGO_AUTH_COOKIE_SAMESITE", "None")
+AUTH_COOKIE_SECURE = _env_bool("DJANGO_AUTH_COOKIE_SECURE", not DEBUG)
+
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
+        "authapi.authentication.CookieJWTAuthentication",
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
     "DEFAULT_THROTTLE_CLASSES": [
@@ -291,15 +297,16 @@ USE_X_FORWARDED_HOST = True
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
 SESSION_COOKIE_HTTPONLY = True
-CSRF_COOKIE_HTTPONLY = True
-SESSION_COOKIE_SAMESITE = os.getenv("DJANGO_SESSION_COOKIE_SAMESITE", "Lax")
-CSRF_COOKIE_SAMESITE = os.getenv("DJANGO_CSRF_COOKIE_SAMESITE", "Lax")
+CSRF_COOKIE_HTTPONLY = _env_bool("DJANGO_CSRF_COOKIE_HTTPONLY", False)
+SESSION_COOKIE_SAMESITE = os.getenv("DJANGO_SESSION_COOKIE_SAMESITE", "None")
+CSRF_COOKIE_SAMESITE = os.getenv("DJANGO_CSRF_COOKIE_SAMESITE", "None")
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"
 SECURE_REFERRER_POLICY = os.getenv("DJANGO_SECURE_REFERRER_POLICY", "same-origin")
 SECURE_CROSS_ORIGIN_OPENER_POLICY = os.getenv(
     "DJANGO_SECURE_CROSS_ORIGIN_OPENER_POLICY", "same-origin"
 )
+SHARE_LINK_TTL_DAYS = _env_int("SHARE_LINK_TTL_DAYS", 30)
 
 if not DEBUG:
     SECURE_SSL_REDIRECT = _env_bool("DJANGO_SECURE_SSL_REDIRECT", True)

@@ -1,8 +1,15 @@
 import uuid
 from django.db import models
+from django.conf import settings
+from django.utils import timezone
+from datetime import timedelta
 from django.contrib.auth.models import User
 from notes.models import Note
 from tasks.models import Task
+
+def default_share_expiry():
+    ttl_days = int(getattr(settings, "SHARE_LINK_TTL_DAYS", 30))
+    return timezone.now() + timedelta(days=ttl_days)
 
 
 class ShareLink(models.Model):
@@ -24,6 +31,7 @@ class ShareLink(models.Model):
     created_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name="share_links")
     permission = models.CharField(max_length=12, choices=PERMISSION_CHOICES, default="read")
     created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(default=default_share_expiry)
     revoked_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
