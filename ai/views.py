@@ -41,6 +41,68 @@ def _chat(messages, model=None, temperature=0.7, request=None):
     )
 
 
+def _requested_model(request):
+    if request is None:
+        return ""
+    return (
+        request.headers.get("X-OpenRouter-Model")
+        or request.headers.get("x-openrouter-model")
+        or ""
+    ).strip()
+
+
+def _chat_with_fallback(messages, temperature=0.7, request=None):
+    default_model = getattr(settings, "OPENROUTER_DEFAULT_MODEL", "openai/gpt-4o-mini")
+    requested_model = _requested_model(request)
+
+    if not requested_model or requested_model.lower() == "auto":
+        completion = _chat(
+            messages=messages,
+            model=default_model,
+            temperature=temperature,
+            request=request,
+        )
+        return completion, {
+            "requested_model": "auto",
+            "used_model": default_model,
+            "fallback_used": False,
+            "request_message": f"Request success using Auto ({default_model}).",
+        }
+
+    try:
+        completion = _chat(
+            messages=messages,
+            model=requested_model,
+            temperature=temperature,
+            request=request,
+        )
+        return completion, {
+            "requested_model": requested_model,
+            "used_model": requested_model,
+            "fallback_used": False,
+            "request_message": f"Request success using model: {requested_model}.",
+        }
+    except Exception:
+        logger.exception(
+            "AI request failed with selected model '%s'. Falling back to default model.",
+            requested_model,
+        )
+        completion = _chat(
+            messages=messages,
+            model=default_model,
+            temperature=temperature,
+            request=request,
+        )
+        return completion, {
+            "requested_model": requested_model,
+            "used_model": default_model,
+            "fallback_used": True,
+            "request_message": (
+                f"Model '{requested_model}' didn't work. Replied using Auto ({default_model})."
+            ),
+        }
+
+
 def _extract_text(completion):
     if not completion or not completion.choices:
         return ""
@@ -182,7 +244,7 @@ class StudyModeView(APIView):
             system_prompt += " Simplify the topic into very easy language."
 
         try:
-            completion = _chat(
+            completion, request_meta = _chat_with_fallback(
                 [
                     {"role": "system", "content": system_prompt},
                     *history,
@@ -196,7 +258,13 @@ class StudyModeView(APIView):
 
         result_text = _extract_text(completion)
         history = _save_history(request, "study", request.data, result_text)
-        return Response({"result": result_text, "history_id": history.id if history else None})
+        return Response(
+            {
+                "result": result_text,
+                "history_id": history.id if history else None,
+                **request_meta,
+            }
+        )
 
 
 class ProjectModeView(APIView):
@@ -236,7 +304,7 @@ class ProjectModeView(APIView):
             user_context.append(f"Additional info: {details}")
 
         try:
-            completion = _chat(
+            completion, request_meta = _chat_with_fallback(
                 [
                     {
                         "role": "system",
@@ -261,7 +329,13 @@ class ProjectModeView(APIView):
 
         project_text = _extract_text(completion)
         history = _save_history(request, "project", request.data, project_text)
-        return Response({"project": project_text, "history_id": history.id if history else None})
+        return Response(
+            {
+                "project": project_text,
+                "history_id": history.id if history else None,
+                **request_meta,
+            }
+        )
 
 
 class GeneralModeView(APIView):
@@ -280,7 +354,7 @@ class GeneralModeView(APIView):
                 }
             )
         try:
-            completion = _chat(
+            completion, request_meta = _chat_with_fallback(
                 [
                     {
                         "role": "system",
@@ -301,7 +375,13 @@ class GeneralModeView(APIView):
 
         answer_text = _extract_text(completion)
         history = _save_history(request, "general", request.data, answer_text)
-        return Response({"answer": answer_text, "history_id": history.id if history else None})
+        return Response(
+            {
+                "answer": answer_text,
+                "history_id": history.id if history else None,
+                **request_meta,
+            }
+        )
 
 
 class NotesAIView(APIView):
@@ -325,7 +405,7 @@ class NotesAIView(APIView):
             system_prompt += " Turn the notes into study questions with short answers."
 
         try:
-            completion = _chat(
+            completion, request_meta = _chat_with_fallback(
                 [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": note_content},
@@ -338,7 +418,13 @@ class NotesAIView(APIView):
 
         updated_text = _extract_text(completion)
         history = _save_history(request, "notes", request.data, updated_text)
-        return Response({"updated_note": updated_text, "history_id": history.id if history else None})
+        return Response(
+            {
+                "updated_note": updated_text,
+                "history_id": history.id if history else None,
+                **request_meta,
+            }
+        )
 
 
 class ChatHistoryListView(ListAPIView):
