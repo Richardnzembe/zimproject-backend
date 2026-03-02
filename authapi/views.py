@@ -18,8 +18,8 @@ from rest_framework import generics, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from .authentication import enforce_csrf
 from .serializers import (
     RegisterSerializer,
     PasswordResetRequestSerializer,
@@ -228,10 +228,7 @@ class CookieTokenObtainPairView(TokenObtainPairView):
             access_token=payload.get("access"),
             refresh_token=payload.get("refresh"),
         )
-        # Keep refresh token out of JS-visible payload.
-        if isinstance(payload, dict) and "refresh" in payload:
-            payload.pop("refresh", None)
-            response.data = payload
+        response.data = {"detail": "Login successful."}
         return response
 
 
@@ -240,6 +237,7 @@ class CookieTokenRefreshView(TokenRefreshView):
     authentication_classes = []
 
     def post(self, request, *args, **kwargs):
+        enforce_csrf(request)
         refresh_cookie_name = getattr(settings, "AUTH_COOKIE_REFRESH", "smart_notes_refresh")
         request_data = request.data.copy()
         if not request_data.get("refresh"):
@@ -259,9 +257,7 @@ class CookieTokenRefreshView(TokenRefreshView):
             access_token=payload.get("access"),
             refresh_token=payload.get("refresh"),
         )
-        if isinstance(payload, dict) and "refresh" in payload:
-            payload.pop("refresh", None)
-            response.data = payload
+        response.data = {"detail": "Token refreshed."}
         return response
 
 
@@ -270,6 +266,7 @@ class LogoutView(APIView):
     authentication_classes = []
 
     def post(self, request):
+        enforce_csrf(request)
         response = Response({"detail": "Logged out."})
         _clear_auth_cookies(response)
         return response
@@ -347,7 +344,6 @@ class PasswordResetConfirmView(APIView):
 
 class SetPasswordView(APIView):
     permission_classes = [IsAuthenticated]
-    authentication_classes = [JWTAuthentication]
 
     def post(self, request):
         serializer = SetPasswordSerializer(data=request.data, context={"user": request.user})
@@ -362,7 +358,6 @@ class SetPasswordView(APIView):
 
 class DeleteUserView(APIView):
     permission_classes = [IsAuthenticated]
-    authentication_classes = [JWTAuthentication]
 
     def delete(self, request, pk=None):
         user = request.user
@@ -384,7 +379,6 @@ class DeleteUserView(APIView):
 
 class UserProfileView(APIView):
     permission_classes = [IsAuthenticated]
-    authentication_classes = [JWTAuthentication]
 
     def get(self, request):
         user = request.user

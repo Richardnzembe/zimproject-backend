@@ -8,6 +8,7 @@ from .views import (
     ChatHistoryListView,
     DeleteAllHistoryView,
     DeleteHistoryItemView,
+    UserAIKeyView,
 )
 
 urlpatterns = [
@@ -19,4 +20,5 @@ urlpatterns = [
     path("history/", ChatHistoryListView.as_view()),
     path("history/delete-all/", DeleteAllHistoryView.as_view()),
     path("history/<int:id>/delete/", DeleteHistoryItemView.as_view()),
+    path("user-key/", UserAIKeyView.as_view()),
 ]

@@ -1,44 +1,70 @@
 from django.conf import settings
+from urllib.parse import urlparse
 from openai import OpenAI
 from rest_framework.generics import ListAPIView, DestroyAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 import logging
-from .models import ChatHistory
+from .models import ChatHistory, UserAIKey
 from .serializers import ChatHistorySerializer
 
 logger = logging.getLogger(__name__)
 
 
+def _validate_ai_base_url(base_url):
+    parsed = urlparse(base_url)
+    if parsed.scheme != "https":
+        raise RuntimeError("AI base URL must use HTTPS.")
+    allowed_hosts = set(getattr(settings, "ALLOWED_AI_HOSTS", []))
+    if parsed.hostname not in allowed_hosts:
+        raise RuntimeError("AI base URL host is not allowed.")
+
+
+def _resolve_api_key(request):
+    user_key = UserAIKey.objects.filter(user=request.user).first()
+    if user_key:
+        return user_key.get_api_key(), True
+    server_key = (getattr(settings, "OPENROUTER_API_KEY", None) or "").strip()
+    if not server_key:
+        return None, False
+    return server_key, False
+
+
 def _get_client(request=None):
-    api_key = None
     base_url = getattr(settings, "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+    _validate_ai_base_url(base_url)
 
-    if request is not None:
-        api_key = request.headers.get("X-OpenRouter-Key") or request.headers.get("x-openrouter-key")
-        base_override = request.headers.get("X-OpenRouter-Base") or request.headers.get("x-openrouter-base")
-        if base_override:
-            base_url = base_override
+    api_key = None
+    using_user_key = False
+    if request is not None and getattr(request, "user", None) and request.user.is_authenticated:
+        api_key, using_user_key = _resolve_api_key(request)
+    else:
+        api_key = (getattr(settings, "OPENROUTER_API_KEY", None) or "").strip()
 
-    if not api_key:
-        api_key = getattr(settings, "OPENROUTER_API_KEY", None)
     if not api_key:
         return None
-    return OpenAI(api_key=api_key, base_url=base_url)
+    return OpenAI(api_key=api_key, base_url=base_url), using_user_key
 
 
 def _chat(messages, model=None, temperature=0.7, request=None):
-    client = _get_client(request=request)
-    if client is None:
+    result = _get_client(request=request)
+    if result is None:
         raise RuntimeError("OpenRouter API key missing")
+    client, using_user_key = result
 
     model = model or getattr(settings, "OPENROUTER_DEFAULT_MODEL", "openai/gpt-4o-mini")
-    return client.chat.completions.create(
-        model=model,
-        messages=messages,
-        temperature=temperature,
-    )
+    try:
+        return client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+        )
+    except Exception:
+        if using_user_key:
+            logger.exception("AI request failed while using user API key.")
+            raise RuntimeError("Your OpenRouter API key request failed.")
+        raise
 
 
 def _requested_model(request):
@@ -473,6 +499,33 @@ class AiApiIndexView(APIView):
                     "notes": "/api/ai/notes/",
                     "history": "/api/ai/history/",
                     "history_delete_all": "/api/ai/history/delete-all/",
+                    "user_key": "/api/ai/user-key/",
                 },
             }
         )
+
+
+class UserAIKeyView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        key_row = UserAIKey.objects.filter(user=request.user).first()
+        return Response(
+            {
+                "configured": bool(key_row),
+                "updated_at": key_row.updated_at if key_row else None,
+            }
+        )
+
+    def post(self, request):
+        api_key = (request.data.get("api_key") or "").strip()
+        if not api_key:
+            return Response({"detail": "api_key is required."}, status=400)
+        key_row, _ = UserAIKey.objects.get_or_create(user=request.user)
+        key_row.set_api_key(api_key)
+        key_row.save(update_fields=["encrypted_api_key", "updated_at"])
+        return Response({"detail": "AI key saved.", "configured": True})
+
+    def delete(self, request):
+        UserAIKey.objects.filter(user=request.user).delete()
+        return Response({"detail": "AI key removed.", "configured": False})

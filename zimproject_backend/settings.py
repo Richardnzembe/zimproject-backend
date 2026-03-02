@@ -11,6 +11,8 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 from pathlib import Path
+import base64
+import hashlib
 import os
 import warnings
 import dj_database_url
@@ -220,14 +222,23 @@ CORS_ALLOWED_ORIGINS = _env_list(
 )
 CORS_ALLOW_CREDENTIALS = _env_bool("DJANGO_CORS_ALLOW_CREDENTIALS", True)
 CORS_ALLOW_HEADERS = list(default_headers) + [
-    "x-openrouter-key",
-    "x-openrouter-base",
+    "x-openrouter-model",
 ]
 
 # OpenRouter API
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+ALLOWED_AI_HOSTS = ["openrouter.ai"]
 OPENROUTER_DEFAULT_MODEL = os.getenv("OPENROUTER_DEFAULT_MODEL", "openai/gpt-4o-mini")
+
+_raw_ai_secret = (
+    os.getenv("AI_KEY_ENCRYPTION_SECRET")
+    or os.getenv("DJANGO_AI_KEY_ENCRYPTION_SECRET")
+    or SECRET_KEY
+)
+AI_KEY_ENCRYPTION_SECRET = base64.urlsafe_b64encode(
+    hashlib.sha256(_raw_ai_secret.encode("utf-8")).digest()
+).decode("ascii")
 
 # Email
 # In production, default to SMTP so password reset is not silently "sent" to console logs.
