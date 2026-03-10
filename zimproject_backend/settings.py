@@ -313,12 +313,12 @@ def _normalize_samesite(name, value, secure, default="Lax"):
         return "Strict"
     return raw
 
+AUTH_COOKIE_SECURE = _env_bool("DJANGO_AUTH_COOKIE_SECURE", not DEBUG)
 AUTH_COOKIE_SAMESITE = _normalize_samesite(
     "AUTH_COOKIE_SAMESITE",
     os.getenv("DJANGO_AUTH_COOKIE_SAMESITE", "Lax"),
     AUTH_COOKIE_SECURE,
 )
-AUTH_COOKIE_SECURE = _env_bool("DJANGO_AUTH_COOKIE_SECURE", not DEBUG)
 AUTH_COOKIE_ACCESS_MAX_AGE = _env_int(
     "DJANGO_AUTH_COOKIE_ACCESS_MAX_AGE",
     int(ACCESS_TOKEN_LIFETIME.total_seconds()),
