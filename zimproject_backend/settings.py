@@ -294,7 +294,30 @@ SIMPLE_JWT = {
 
 AUTH_COOKIE_ACCESS = os.getenv("DJANGO_AUTH_COOKIE_ACCESS", "smart_notes_access")
 AUTH_COOKIE_REFRESH = os.getenv("DJANGO_AUTH_COOKIE_REFRESH", "smart_notes_refresh")
-AUTH_COOKIE_SAMESITE = os.getenv("DJANGO_AUTH_COOKIE_SAMESITE", "None")
+def _normalize_samesite(name, value, secure, default="Lax"):
+    raw = (value or "").strip()
+    if not raw:
+        raw = default
+    lowered = raw.lower()
+    if lowered == "none":
+        if not secure:
+            warnings.warn(
+                f"{name}=None requires Secure cookies; falling back to Lax for non-HTTPS environments.",
+                RuntimeWarning,
+            )
+            return "Lax"
+        return "None"
+    if lowered == "lax":
+        return "Lax"
+    if lowered == "strict":
+        return "Strict"
+    return raw
+
+AUTH_COOKIE_SAMESITE = _normalize_samesite(
+    "AUTH_COOKIE_SAMESITE",
+    os.getenv("DJANGO_AUTH_COOKIE_SAMESITE", "Lax"),
+    AUTH_COOKIE_SECURE,
+)
 AUTH_COOKIE_SECURE = _env_bool("DJANGO_AUTH_COOKIE_SECURE", not DEBUG)
 AUTH_COOKIE_ACCESS_MAX_AGE = _env_int(
     "DJANGO_AUTH_COOKIE_ACCESS_MAX_AGE",
@@ -329,8 +352,16 @@ SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
 SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_HTTPONLY = _env_bool("DJANGO_CSRF_COOKIE_HTTPONLY", False)
-SESSION_COOKIE_SAMESITE = os.getenv("DJANGO_SESSION_COOKIE_SAMESITE", "None")
-CSRF_COOKIE_SAMESITE = os.getenv("DJANGO_CSRF_COOKIE_SAMESITE", "None")
+SESSION_COOKIE_SAMESITE = _normalize_samesite(
+    "SESSION_COOKIE_SAMESITE",
+    os.getenv("DJANGO_SESSION_COOKIE_SAMESITE", "Lax"),
+    SESSION_COOKIE_SECURE,
+)
+CSRF_COOKIE_SAMESITE = _normalize_samesite(
+    "CSRF_COOKIE_SAMESITE",
+    os.getenv("DJANGO_CSRF_COOKIE_SAMESITE", "Lax"),
+    CSRF_COOKIE_SECURE,
+)
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"
 SECURE_REFERRER_POLICY = os.getenv("DJANGO_SECURE_REFERRER_POLICY", "same-origin")
