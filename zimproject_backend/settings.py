@@ -107,6 +107,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework.authtoken',
+    'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
     'authapi',
     'users',
@@ -279,9 +280,15 @@ if EMAIL_PORT == 465 and EMAIL_USE_TLS and not EMAIL_USE_SSL:
 
 from datetime import timedelta
 
+ACCESS_TOKEN_LIFETIME = timedelta(minutes=_env_int("DJANGO_ACCESS_TOKEN_MINUTES", 15))
+REFRESH_TOKEN_LIFETIME = timedelta(days=_env_int("DJANGO_REFRESH_TOKEN_DAYS", 30))
+
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
+    "ACCESS_TOKEN_LIFETIME": ACCESS_TOKEN_LIFETIME,
+    "REFRESH_TOKEN_LIFETIME": REFRESH_TOKEN_LIFETIME,
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "UPDATE_LAST_LOGIN": True,
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
@@ -289,6 +296,14 @@ AUTH_COOKIE_ACCESS = os.getenv("DJANGO_AUTH_COOKIE_ACCESS", "smart_notes_access"
 AUTH_COOKIE_REFRESH = os.getenv("DJANGO_AUTH_COOKIE_REFRESH", "smart_notes_refresh")
 AUTH_COOKIE_SAMESITE = os.getenv("DJANGO_AUTH_COOKIE_SAMESITE", "None")
 AUTH_COOKIE_SECURE = _env_bool("DJANGO_AUTH_COOKIE_SECURE", not DEBUG)
+AUTH_COOKIE_ACCESS_MAX_AGE = _env_int(
+    "DJANGO_AUTH_COOKIE_ACCESS_MAX_AGE",
+    int(ACCESS_TOKEN_LIFETIME.total_seconds()),
+)
+AUTH_COOKIE_REFRESH_MAX_AGE = _env_int(
+    "DJANGO_AUTH_COOKIE_REFRESH_MAX_AGE",
+    int(REFRESH_TOKEN_LIFETIME.total_seconds()),
+)
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (

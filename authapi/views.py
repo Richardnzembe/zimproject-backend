@@ -19,6 +19,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework_simplejwt.tokens import RefreshToken, TokenError
 from .authentication import enforce_csrf
 from .serializers import (
     RegisterSerializer,
@@ -34,6 +35,8 @@ def _set_auth_cookies(response, access_token=None, refresh_token=None):
     samesite = getattr(settings, "AUTH_COOKIE_SAMESITE", "None")
     access_name = getattr(settings, "AUTH_COOKIE_ACCESS", "smart_notes_access")
     refresh_name = getattr(settings, "AUTH_COOKIE_REFRESH", "smart_notes_refresh")
+    access_max_age = getattr(settings, "AUTH_COOKIE_ACCESS_MAX_AGE", None)
+    refresh_max_age = getattr(settings, "AUTH_COOKIE_REFRESH_MAX_AGE", None)
 
     if access_token:
         response.set_cookie(
@@ -42,6 +45,7 @@ def _set_auth_cookies(response, access_token=None, refresh_token=None):
             httponly=True,
             secure=secure,
             samesite=samesite,
+            max_age=access_max_age,
             path="/",
         )
     if refresh_token:
@@ -51,6 +55,7 @@ def _set_auth_cookies(response, access_token=None, refresh_token=None):
             httponly=True,
             secure=secure,
             samesite=samesite,
+            max_age=refresh_max_age,
             path="/",
         )
 
@@ -267,6 +272,14 @@ class LogoutView(APIView):
 
     def post(self, request):
         enforce_csrf(request)
+        refresh_cookie_name = getattr(settings, "AUTH_COOKIE_REFRESH", "smart_notes_refresh")
+        refresh_token = request.data.get("refresh") or request.COOKIES.get(refresh_cookie_name)
+        if refresh_token:
+            try:
+                RefreshToken(refresh_token).blacklist()
+            except TokenError:
+                # If token is already invalid/expired, we still clear cookies.
+                pass
         response = Response({"detail": "Logged out."})
         _clear_auth_cookies(response)
         return response
