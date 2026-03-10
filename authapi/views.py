@@ -228,12 +228,13 @@ class CookieTokenObtainPairView(TokenObtainPairView):
         if response.status_code != status.HTTP_200_OK:
             return response
         payload = response.data or {}
+        csrf_token = get_token(request)
         _set_auth_cookies(
             response,
             access_token=payload.get("access"),
             refresh_token=payload.get("refresh"),
         )
-        response.data = {"detail": "Login successful."}
+        response.data = {"detail": "Login successful.", "csrfToken": csrf_token}
         return response
 
 
@@ -257,12 +258,13 @@ class CookieTokenRefreshView(TokenRefreshView):
             return response
 
         payload = response.data or {}
+        csrf_token = get_token(request)
         _set_auth_cookies(
             response,
             access_token=payload.get("access"),
             refresh_token=payload.get("refresh"),
         )
-        response.data = {"detail": "Token refreshed."}
+        response.data = {"detail": "Token refreshed.", "csrfToken": csrf_token}
         return response
 
 
