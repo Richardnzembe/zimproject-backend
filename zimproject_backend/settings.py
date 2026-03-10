@@ -15,6 +15,7 @@ import base64
 import hashlib
 import os
 import warnings
+from urllib.parse import urlparse
 import dj_database_url
 from corsheaders.defaults import default_headers
 from django.core.exceptions import ImproperlyConfigured
@@ -314,9 +315,44 @@ def _normalize_samesite(name, value, secure, default="Lax"):
     return raw
 
 AUTH_COOKIE_SECURE = _env_bool("DJANGO_AUTH_COOKIE_SECURE", not DEBUG)
+def _origin_host(origin):
+    try:
+        parsed = urlparse(origin)
+    except Exception:
+        return ""
+    return (parsed.hostname or "").lower()
+
+
+def _needs_cross_site_cookies():
+    if not CORS_ALLOW_CREDENTIALS:
+        return False
+
+    allowed_hosts = {
+        host.lower()
+        for host in (ALLOWED_HOSTS or [])
+        if isinstance(host, str) and host.strip()
+    }
+
+    origin_hosts = []
+    for source in (CORS_ALLOWED_ORIGINS, CSRF_TRUSTED_ORIGINS):
+        for origin in (source or []):
+            host = _origin_host(origin)
+            if host:
+                origin_hosts.append(host)
+
+    if not origin_hosts:
+        return False
+
+    if "*" in allowed_hosts or not allowed_hosts:
+        return True
+
+    return any(host not in allowed_hosts for host in origin_hosts)
+
+
+DEFAULT_COOKIE_SAMESITE = "None" if _needs_cross_site_cookies() else "Lax"
 AUTH_COOKIE_SAMESITE = _normalize_samesite(
     "AUTH_COOKIE_SAMESITE",
-    os.getenv("DJANGO_AUTH_COOKIE_SAMESITE", "Lax"),
+    os.getenv("DJANGO_AUTH_COOKIE_SAMESITE", DEFAULT_COOKIE_SAMESITE),
     AUTH_COOKIE_SECURE,
 )
 AUTH_COOKIE_ACCESS_MAX_AGE = _env_int(
@@ -354,12 +390,12 @@ SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_HTTPONLY = _env_bool("DJANGO_CSRF_COOKIE_HTTPONLY", False)
 SESSION_COOKIE_SAMESITE = _normalize_samesite(
     "SESSION_COOKIE_SAMESITE",
-    os.getenv("DJANGO_SESSION_COOKIE_SAMESITE", "Lax"),
+    os.getenv("DJANGO_SESSION_COOKIE_SAMESITE", DEFAULT_COOKIE_SAMESITE),
     SESSION_COOKIE_SECURE,
 )
 CSRF_COOKIE_SAMESITE = _normalize_samesite(
     "CSRF_COOKIE_SAMESITE",
-    os.getenv("DJANGO_CSRF_COOKIE_SAMESITE", "Lax"),
+    os.getenv("DJANGO_CSRF_COOKIE_SAMESITE", DEFAULT_COOKIE_SAMESITE),
     CSRF_COOKIE_SECURE,
 )
 SECURE_CONTENT_TYPE_NOSNIFF = True
