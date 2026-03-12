@@ -4,6 +4,7 @@ import smtplib
 import threading
 import socket
 import json
+from datetime import timedelta
 from urllib import request as urlrequest
 from urllib import error as urlerror
 from django.db import DatabaseError, IntegrityError
@@ -13,6 +14,7 @@ from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import send_mail, get_connection
 from django.middleware.csrf import get_token
 from django.utils.encoding import force_bytes
+from django.utils import timezone
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from rest_framework import generics, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -29,6 +31,24 @@ from .serializers import (
 )
 
 logger = logging.getLogger(__name__)
+
+def _token_meta():
+    access_lifetime = getattr(settings, "ACCESS_TOKEN_LIFETIME", None)
+    refresh_lifetime = getattr(settings, "REFRESH_TOKEN_LIFETIME", None)
+    if access_lifetime is None:
+        access_lifetime = settings.SIMPLE_JWT.get("ACCESS_TOKEN_LIFETIME", timedelta(minutes=15))
+    if refresh_lifetime is None:
+        refresh_lifetime = settings.SIMPLE_JWT.get("REFRESH_TOKEN_LIFETIME", timedelta(days=30))
+
+    now = timezone.now()
+    access_expires_at = now + access_lifetime
+    refresh_expires_at = now + refresh_lifetime
+    return {
+        "access_expires_in": int(access_lifetime.total_seconds()),
+        "refresh_expires_in": int(refresh_lifetime.total_seconds()),
+        "access_expires_at": access_expires_at.isoformat(),
+        "refresh_expires_at": refresh_expires_at.isoformat(),
+    }
 
 def _set_auth_cookies(response, access_token=None, refresh_token=None):
     secure = bool(getattr(settings, "AUTH_COOKIE_SECURE", True))
@@ -234,7 +254,11 @@ class CookieTokenObtainPairView(TokenObtainPairView):
             access_token=payload.get("access"),
             refresh_token=payload.get("refresh"),
         )
-        response.data = {"detail": "Login successful.", "csrfToken": csrf_token}
+        response.data = {
+            "detail": "Login successful.",
+            "csrfToken": csrf_token,
+            **_token_meta(),
+        }
         return response
 
 
@@ -264,7 +288,11 @@ class CookieTokenRefreshView(TokenRefreshView):
             access_token=payload.get("access"),
             refresh_token=payload.get("refresh"),
         )
-        response.data = {"detail": "Token refreshed.", "csrfToken": csrf_token}
+        response.data = {
+            "detail": "Token refreshed.",
+            "csrfToken": csrf_token,
+            **_token_meta(),
+        }
         return response
 
 
