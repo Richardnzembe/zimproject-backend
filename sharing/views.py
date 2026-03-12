@@ -52,6 +52,34 @@ def _share_members_payload(share):
     return ShareMemberSerializer(members, many=True).data
 
 
+def _notify_share_activity(*, share, actor, title, message, data=None, source_key=None):
+    member_ids = ShareMember.objects.filter(share=share).values_list("user_id", flat=True)
+    recipient_ids = set(member_ids)
+    recipient_ids.add(share.created_by_id)
+    if actor:
+        recipient_ids.discard(actor.id)
+
+    if not recipient_ids:
+        return
+
+    payload = {
+        "resource_type": share.resource_type,
+        "share_token": str(share.token),
+        **(data or {}),
+    }
+
+    recipients = User.objects.filter(id__in=recipient_ids)
+    for user in recipients:
+        create_notification(
+            user=user,
+            kind=Notification.KIND_SHARE_ACTIVITY,
+            title=title,
+            message=message,
+            data=payload,
+            source_key=source_key,
+        )
+
+
 def _chat_messages_for_session(share):
     items = (
         ChatHistory.objects.filter(
@@ -63,6 +91,8 @@ def _chat_messages_for_session(share):
     )
     messages = []
     for item in items:
+        sender_name = item.input_data.get("shared_by") or item.user.username
+        sender_id = item.input_data.get("shared_by_id") or item.user_id
         messages.append(
             {
                 "id": item.id,
@@ -72,7 +102,8 @@ def _chat_messages_for_session(share):
                 or item.input_data.get("project_name")
                 or "",
                 "created_at": item.created_at,
-                "username": item.user.username,
+                "username": sender_name,
+                "user_id": sender_id,
             }
         )
         messages.append(
@@ -360,7 +391,7 @@ class SharedChatView(APIView):
         )
         response_text = _extract_text(completion)
 
-        ChatHistory.objects.create(
+        history = ChatHistory.objects.create(
             user=share.created_by,
             mode=mode,
             input_data={
@@ -370,6 +401,15 @@ class SharedChatView(APIView):
                 "shared_by_id": request.user.id,
             },
             response_text=response_text,
+        )
+
+        _notify_share_activity(
+            share=share,
+            actor=request.user,
+            title="Shared chat updated",
+            message=f"{request.user.username} sent a message in a shared chat.",
+            data={"session_id": share.session_id},
+            source_key=f"share-chat:{share.session_id}:{history.id}",
         )
 
         return Response({"answer": response_text})
@@ -406,7 +446,17 @@ class SharedNoteView(APIView):
         note.category = data.get("category", note.category)
         note.tags = data.get("tags", note.tags)
         note.content = data.get("content", note.content)
+        note.last_edited_by = request.user
         note.save()
+
+        _notify_share_activity(
+            share=share,
+            actor=request.user,
+            title="Shared note updated",
+            message=f"{request.user.username} updated a shared note.",
+            data={"note_id": note.id},
+            source_key=f"share-note:{note.id}:{note.updated_at.isoformat()}",
+        )
 
         return Response({"note": NoteSummarySerializer(note).data})
 
@@ -443,6 +493,15 @@ class SharedTaskView(APIView):
         task.priority = data.get("priority", task.priority)
         task.due_date = data.get("due_date", task.due_date)
         task.save()
+
+        _notify_share_activity(
+            share=share,
+            actor=request.user,
+            title="Shared task updated",
+            message=f"{request.user.username} updated a shared task.",
+            data={"task_id": task.id},
+            source_key=f"share-task:{task.id}:{task.updated_at.isoformat()}",
+        )
 
         return Response({"task": TaskSummarySerializer(task).data})
 

@@ -1,14 +1,33 @@
+from django.contrib.auth.models import User
 from rest_framework import serializers
 from .models import Note
 
 
+class UserSummarySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ["id", "username"]
+
+
 class NoteSerializer(serializers.ModelSerializer):
     tags = serializers.ListField(child=serializers.CharField(), required=False)
+    last_edited_by = UserSummarySerializer(read_only=True)
 
     class Meta:
         model = Note
-        fields = ["id", "client_id", "title", "subject", "category", "tags", "content", "created_at"]
-        read_only_fields = ["id", "created_at"]
+        fields = [
+            "id",
+            "client_id",
+            "title",
+            "subject",
+            "category",
+            "tags",
+            "content",
+            "created_at",
+            "updated_at",
+            "last_edited_by",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at", "last_edited_by"]
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

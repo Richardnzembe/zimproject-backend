@@ -37,9 +37,21 @@ class ShareInviteSerializer(serializers.ModelSerializer):
 
 
 class NoteSummarySerializer(serializers.ModelSerializer):
+    last_edited_by = UserSummarySerializer(read_only=True)
+
     class Meta:
         model = Note
-        fields = ["id", "title", "subject", "category", "tags", "content", "created_at"]
+        fields = [
+            "id",
+            "title",
+            "subject",
+            "category",
+            "tags",
+            "content",
+            "created_at",
+            "updated_at",
+            "last_edited_by",
+        ]
 
 
 class TaskSummarySerializer(serializers.ModelSerializer):

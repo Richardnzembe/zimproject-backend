@@ -1,4 +1,6 @@
 from django.conf import settings
+from django.contrib.auth.models import User
+from django.utils import timezone
 from urllib.parse import urlparse
 from openai import OpenAI
 from rest_framework.generics import ListAPIView, DestroyAPIView
@@ -8,6 +10,9 @@ from rest_framework.views import APIView
 import logging
 from .models import ChatHistory, UserAIKey
 from .serializers import ChatHistorySerializer
+from notifications.models import Notification
+from notifications.services import create_notification
+from sharing.models import ShareLink, ShareMember
 
 logger = logging.getLogger(__name__)
 
@@ -244,6 +249,43 @@ def _save_history(request, mode, input_data, response_text):
         return None
 
 
+def _notify_shared_chat_activity(*, session_id, actor, history_id):
+    if not session_id or not actor or not history_id:
+        return
+    shares = ShareLink.objects.filter(
+        resource_type="chat",
+        session_id=session_id,
+        revoked_at__isnull=True,
+        expires_at__gt=timezone.now(),
+    )
+    if not shares.exists():
+        return
+
+    member_ids = ShareMember.objects.filter(share__in=shares).values_list("user_id", flat=True)
+    recipient_ids = set(member_ids)
+    recipient_ids.update(shares.values_list("created_by_id", flat=True))
+    recipient_ids.discard(actor.id)
+    if not recipient_ids:
+        return
+
+    payload = {
+        "resource_type": "chat",
+        "session_id": session_id,
+        "share_tokens": [str(token) for token in shares.values_list("token", flat=True)],
+    }
+
+    recipients = User.objects.filter(id__in=recipient_ids)
+    for user in recipients:
+        create_notification(
+            user=user,
+            kind=Notification.KIND_SHARE_ACTIVITY,
+            title="Shared chat updated",
+            message=f"{actor.username} added a message in a shared chat.",
+            data=payload,
+            source_key=f"share-chat:{session_id}:{history_id}",
+        )
+
+
 class StudyModeView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -251,6 +293,7 @@ class StudyModeView(APIView):
         notes = request.data.get("notes", "")
         task = request.data.get("task", "explain")  # summarize / explain / quiz
         action = request.data.get("action", "")
+        session_id = request.data.get("session_id")
         if action:
             task = action
         history = _normalize_history(request.data.get("history"))
@@ -284,6 +327,12 @@ class StudyModeView(APIView):
 
         result_text = _extract_text(completion)
         history = _save_history(request, "study", request.data, result_text)
+        if history:
+            _notify_shared_chat_activity(
+                session_id=session_id,
+                actor=request.user,
+                history_id=history.id,
+            )
         return Response(
             {
                 "result": result_text,
@@ -302,6 +351,7 @@ class ProjectModeView(APIView):
         details = request.data.get("details", "")
         subject = request.data.get("subject", "")
         level = request.data.get("level", "")
+        session_id = request.data.get("session_id")
         history = _normalize_history(request.data.get("history"))
 
         if mode == "guided":
@@ -355,6 +405,12 @@ class ProjectModeView(APIView):
 
         project_text = _extract_text(completion)
         history = _save_history(request, "project", request.data, project_text)
+        if history:
+            _notify_shared_chat_activity(
+                session_id=session_id,
+                actor=request.user,
+                history_id=history.id,
+            )
         return Response(
             {
                 "project": project_text,
@@ -369,6 +425,7 @@ class GeneralModeView(APIView):
 
     def post(self, request):
         question = request.data.get("question", "")
+        session_id = request.data.get("session_id")
         history = _normalize_history(request.data.get("history"))
         if _is_project_request(question):
             return Response(
@@ -401,6 +458,12 @@ class GeneralModeView(APIView):
 
         answer_text = _extract_text(completion)
         history = _save_history(request, "general", request.data, answer_text)
+        if history:
+            _notify_shared_chat_activity(
+                session_id=session_id,
+                actor=request.user,
+                history_id=history.id,
+            )
         return Response(
             {
                 "answer": answer_text,
@@ -416,6 +479,7 @@ class NotesAIView(APIView):
     def post(self, request):
         note_content = request.data.get("note_content", "")
         action = request.data.get("action", "summarize")  # summarize / explain / understandable
+        session_id = request.data.get("session_id")
 
         system_prompt = (
             f"{_ree_identity()} Mode: STUDY (Notes Integration). "
@@ -444,6 +508,12 @@ class NotesAIView(APIView):
 
         updated_text = _extract_text(completion)
         history = _save_history(request, "notes", request.data, updated_text)
+        if history:
+            _notify_shared_chat_activity(
+                session_id=session_id,
+                actor=request.user,
+                history_id=history.id,
+            )
         return Response(
             {
                 "updated_note": updated_text,

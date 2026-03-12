@@ -13,6 +13,14 @@ class Note(models.Model):
     tags = models.TextField(blank=True)
     content = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    last_edited_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="edited_notes",
+    )
 
     class Meta:
         constraints = [

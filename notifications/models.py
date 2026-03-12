@@ -5,6 +5,7 @@ from django.db.models import Q
 
 class Notification(models.Model):
     KIND_SHARE_INVITE = "share_invite"
+    KIND_SHARE_ACTIVITY = "share_activity"
     KIND_TASK_DUE = "task_due"
     KIND_TASK_DUE_SOON = "task_due_soon"
     KIND_STUDY_REMINDER = "study_reminder"
@@ -12,6 +13,7 @@ class Notification(models.Model):
 
     KIND_CHOICES = (
         (KIND_SHARE_INVITE, "Share invite"),
+        (KIND_SHARE_ACTIVITY, "Share activity"),
         (KIND_TASK_DUE, "Task due"),
         (KIND_TASK_DUE_SOON, "Task due soon"),
         (KIND_STUDY_REMINDER, "Study reminder"),
@@ -40,4 +42,3 @@ class Notification(models.Model):
                 name="uniq_notification_source_per_user",
             )
         ]
-
