@@ -21,10 +21,6 @@ from ai.views import (
     _chat,
     _extract_text,
     _ree_identity,
-    _project_template,
-    _project_formatting_rules,
-    _originality_rules,
-    _project_subject_rules,
 )
 from notifications.models import Notification
 from notifications.services import create_notification
@@ -328,9 +324,9 @@ class SharedChatView(APIView):
             return Response({"detail": "Not allowed."}, status=403)
 
         message = request.data.get("message", "").strip()
-        mode = request.data.get("mode", "general")
-        subject = request.data.get("subject", "")
-        project_mode = request.data.get("project_mode", "guided")
+        mode = (request.data.get("mode", "general") or "general").strip().lower()
+        if mode in ("study", "project"):
+            mode = "research"
 
         if not message:
             return Response({"detail": "Message is required."}, status=400)
@@ -347,39 +343,21 @@ class SharedChatView(APIView):
             history.append({"role": "user", "content": item.input_data.get("question") or item.input_data.get("notes") or item.input_data.get("project_name") or ""})
             history.append({"role": "assistant", "content": item.response_text})
 
-        if mode == "study":
+        if mode == "research":
             system_prompt = (
                 f"{_ree_identity()} "
-                "Mode: STUDY. Behave Socratically: ask guiding questions, explain step-by-step, "
-                "and break content into small chunks. Explain the notes in simple, understandable terms."
+                "Mode: DEEP RESEARCH. Explore the request from multiple angles, explain tradeoffs, "
+                "and keep the answer structured and easy to follow."
             )
-        elif mode == "project":
-            subject_rules = _project_subject_rules(subject)
-            prompt = (
-                "Guided Project Mode: ask step-by-step questions to build the project. "
-                "Ask for subject, topic, and school level if missing. "
-                "Build each section with the student."
-            )
-            if project_mode != "guided":
-                prompt = (
-                    "Fast Project Mode: generate a complete project using the ZIMSEC template. "
-                    "If the user says 'do everything' or topic is missing, choose a suitable topic yourself. "
-                    "Use subject-specific rules. Localize examples. Examiner-safe language."
-                )
+        elif mode == "writing":
             system_prompt = (
                 f"{_ree_identity()} "
-                "Mode: PROJECT (ZIMSEC). "
-                f"{_project_template()} "
-                f"{_project_formatting_rules()} "
-                f"{_originality_rules()} "
-                f"{subject_rules}"
+                "Mode: WRITING. Help with drafting, rewriting, improving tone, and polishing clarity."
             )
-            history.append({"role": "user", "content": prompt})
         else:
             system_prompt = (
                 f"{_ree_identity()} "
-                "Mode: GENERAL. Provide direct answers with simple explanations. "
-                "Ask a brief follow-up question if needed."
+                "Mode: GENERAL. Provide direct, useful answers with simple explanations and minimal overhead."
             )
 
         completion = _chat(

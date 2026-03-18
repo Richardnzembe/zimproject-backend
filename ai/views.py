@@ -142,80 +142,36 @@ def _extract_text(completion):
 
 def _ree_identity():
     return (
-        "You are REE (Research, Explain, Elevate), the user's study, project, and exam companion. "
-        "You must follow the selected mode rules strictly."
+        "You are REE (Research, Explain, Elevate), the user's reasoning, research, and writing companion. "
+        "Adapt to the selected mode and stay clear, practical, and accurate."
     )
 
 
-def _is_project_request(text):
-    if not text:
-        return False
-    lowered = text.lower()
-    keywords = ["project", "zimsec", "proposal", "title page", "abstract", "literature review", "methodology"]
-    return any(k in lowered for k in keywords)
+def _chat_input_from_request(data):
+    if not isinstance(data, dict):
+        return ""
 
+    prompt = (data.get("question") or "").strip()
+    notes = (data.get("notes") or "").strip()
+    topic = (data.get("project_name") or "").strip()
+    details = (data.get("details") or "").strip()
+    subject = (data.get("subject") or "").strip()
+    level = (data.get("level") or "").strip()
 
-def _project_formatting_rules():
-    return (
-        "Formatting rules (Project Mode only): A4 paper, Times New Roman, font size 12, "
-        "line spacing 1.5, margins: left 1.5\", right 1\", top 1\", bottom 1\"."
-    )
-
-
-def _project_template():
-    return (
-        "Use ONLY the Standard ZIMSEC Project Framework and report structure. "
-        "Include all mandatory stages and headings.\n"
-        "Mandatory stages (include in order with typical marks):\n"
-        "1) Problem Identification (5 marks)\n"
-        "2) Investigation of Ideas (10 marks)\n"
-        "3) Generation of Ideas (10 marks)\n"
-        "4) Development/Refinement (10 marks)\n"
-        "5) Presentation of Results (10 marks)\n"
-        "6) Evaluation & Recommendations (5 marks)\n"
-        "General report structure (use these formal headings):\n"
-        "Title Page\n"
-        "Table of Contents\n"
-        "Introduction\n"
-        "Research Methodology\n"
-        "Findings & Analysis\n"
-        "Appendices"
-    )
-
-
-def _project_subject_rules(subject):
-    subject_lower = (subject or "").lower()
-    if "science" in subject_lower:
-        return (
-            "Science/Geography: expand Research Methodology and Findings & Analysis with clear "
-            "environmental or experimental evidence. Use the 6 stages."
-        )
-    if "math" in subject_lower:
-        return (
-            "Mathematics: include relevant calculations, formulas, and worked examples tied to "
-            "real-life data (profits, surveys, measurements, modeling)."
-        )
-    if "computer" in subject_lower or "ict" in subject_lower:
-        return (
-            "Computer Science/ICT (4021): include system analysis approach with Section A "
-            "(Investigation), Section B (Design), Section C (Development), and Section D "
-            "(Testing/Evaluation)."
-        )
-    if "english" in subject_lower or "shona" in subject_lower:
-        return (
-            "Languages: focus on communication strategies, literacy improvements, or cultural "
-            "preservation as appropriate."
-        )
-    if "heritage" in subject_lower:
-        return "Include local history, culture, traditions, and community knowledge."
-    return ""
-
-
-def _originality_rules():
-    return (
-        "Originality and safety rules: Never copy content directly. Rewrite everything originally. "
-        "Localize examples. Avoid plagiarism. Match ZIMSEC expectations."
-    )
+    parts = []
+    if prompt:
+        parts.append(prompt)
+    if notes and notes != prompt:
+        parts.append(notes)
+    if topic:
+        parts.append(f"Topic: {topic}")
+    if subject:
+        parts.append(f"Subject: {subject}")
+    if level:
+        parts.append(f"Level: {level}")
+    if details:
+        parts.append(f"Details: {details}")
+    return "\n".join(parts).strip()
 
 
 def _normalize_history(raw_history, max_items=10):
@@ -247,6 +203,41 @@ def _save_history(request, mode, input_data, response_text):
     except Exception:
         logger.exception("Failed to save AI chat history")
         return None
+
+
+def _respond_to_chat_mode(request, *, mode, system_prompt, user_content, response_key="answer"):
+    session_id = request.data.get("session_id")
+    history = _normalize_history(request.data.get("history"))
+
+    try:
+        completion, request_meta = _chat_with_fallback(
+            [
+                {"role": "system", "content": system_prompt},
+                *history,
+                {"role": "user", "content": user_content or "Help me with this request."},
+            ],
+            request=request,
+        )
+    except Exception:
+        logger.exception("AI request failed")
+        return Response({"error": "AI service error"}, status=502)
+
+    response_text = _extract_text(completion)
+    history_row = _save_history(request, mode, request.data, response_text)
+    if history_row:
+        _notify_shared_chat_activity(
+            session_id=session_id,
+            actor=request.user,
+            history_id=history_row.id,
+        )
+
+    return Response(
+        {
+            response_key: response_text,
+            "history_id": history_row.id if history_row else None,
+            **request_meta,
+        }
+    )
 
 
 def _notify_shared_chat_activity(*, session_id, actor, history_id):
@@ -296,12 +287,11 @@ class StudyModeView(APIView):
         session_id = request.data.get("session_id")
         if action:
             task = action
-        history = _normalize_history(request.data.get("history"))
 
         system_prompt = (
             f"{_ree_identity()} "
-            "Mode: STUDY. Behave Socratically: ask guiding questions, explain step-by-step, "
-            "and break content into small chunks."
+            "Mode: DEEP RESEARCH. Give a structured, thorough explanation, surface important assumptions, "
+            "and keep the answer easy to follow."
         )
         if task == "summarize":
             system_prompt += " Summarize the following notes clearly and concisely."
@@ -312,33 +302,48 @@ class StudyModeView(APIView):
         elif task == "simplify":
             system_prompt += " Simplify the topic into very easy language."
 
-        try:
-            completion, request_meta = _chat_with_fallback(
-                [
-                    {"role": "system", "content": system_prompt},
-                    *history,
-                    {"role": "user", "content": notes},
-                ],
-                request=request,
-            )
-        except Exception:
-            logger.exception("AI request failed")
-            return Response({"error": "AI service error"}, status=502)
+        return _respond_to_chat_mode(
+            request,
+            mode="research",
+            system_prompt=system_prompt,
+            user_content=notes,
+            response_key="result",
+        )
 
-        result_text = _extract_text(completion)
-        history = _save_history(request, "study", request.data, result_text)
-        if history:
-            _notify_shared_chat_activity(
-                session_id=session_id,
-                actor=request.user,
-                history_id=history.id,
-            )
-        return Response(
-            {
-                "result": result_text,
-                "history_id": history.id if history else None,
-                **request_meta,
-            }
+
+class ResearchModeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        question = _chat_input_from_request(request.data)
+        system_prompt = (
+            f"{_ree_identity()} "
+            "Mode: DEEP RESEARCH. Explore the request from multiple angles, explain tradeoffs, "
+            "organize the answer with short section headings, and be explicit about uncertainty when needed."
+        )
+        return _respond_to_chat_mode(
+            request,
+            mode="research",
+            system_prompt=system_prompt,
+            user_content=question,
+        )
+
+
+class WritingModeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        question = _chat_input_from_request(request.data)
+        system_prompt = (
+            f"{_ree_identity()} "
+            "Mode: WRITING. Help with drafting, rewriting, improving tone, tightening structure, "
+            "and polishing clarity while preserving the user's intent."
+        )
+        return _respond_to_chat_mode(
+            request,
+            mode="writing",
+            system_prompt=system_prompt,
+            user_content=question,
         )
 
 
@@ -346,77 +351,18 @@ class ProjectModeView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        mode = request.data.get("mode", "guided")  # guided / fast
-        project_name = request.data.get("project_name", "")
-        details = request.data.get("details", "")
-        subject = request.data.get("subject", "")
-        level = request.data.get("level", "")
-        session_id = request.data.get("session_id")
-        history = _normalize_history(request.data.get("history"))
-
-        if mode == "guided":
-            prompt = (
-                "Guided Project Mode: ask step-by-step questions to build the project. "
-                "Ask for subject, topic, and school level if missing. "
-                "Build each section with the student."
-            )
-        else:
-            prompt = (
-                "Fast Project Mode: generate a complete project using the ZIMSEC template. "
-                "If the user says 'do everything' or topic is missing, choose a suitable topic yourself. "
-                "Use subject-specific rules. Localize examples. Examiner-safe language."
-            )
-
-        subject_rules = _project_subject_rules(subject)
-
-        user_context = []
-        if project_name:
-            user_context.append(f"Project topic: {project_name}")
-        if subject:
-            user_context.append(f"Subject: {subject}")
-        if level:
-            user_context.append(f"School level: {level}")
-        if details:
-            user_context.append(f"Additional info: {details}")
-
-        try:
-            completion, request_meta = _chat_with_fallback(
-                [
-                    {
-                        "role": "system",
-                        "content": (
-                            f"{_ree_identity()} "
-                            "Mode: PROJECT (ZIMSEC). "
-                            f"{_project_template()} "
-                            f"{_project_formatting_rules()} "
-                            f"{_originality_rules()} "
-                            f"{subject_rules}"
-                        ),
-                    },
-                    *history,
-                    {"role": "user", "content": prompt},
-                    {"role": "user", "content": "\n".join(user_context) if user_context else "No extra context provided."},
-                ],
-                request=request,
-            )
-        except Exception:
-            logger.exception("AI request failed")
-            return Response({"error": "AI service error"}, status=502)
-
-        project_text = _extract_text(completion)
-        history = _save_history(request, "project", request.data, project_text)
-        if history:
-            _notify_shared_chat_activity(
-                session_id=session_id,
-                actor=request.user,
-                history_id=history.id,
-            )
-        return Response(
-            {
-                "project": project_text,
-                "history_id": history.id if history else None,
-                **request_meta,
-            }
+        legacy_request = _chat_input_from_request(request.data)
+        system_prompt = (
+            f"{_ree_identity()} "
+            "Mode: DEEP RESEARCH. The request may come from a legacy project workflow. "
+            "Help with planning, research direction, structure, and next steps without relying on any fixed exam framework."
+        )
+        return _respond_to_chat_mode(
+            request,
+            mode="research",
+            system_prompt=system_prompt,
+            user_content=legacy_request,
+            response_key="project",
         )
 
 
@@ -425,51 +371,15 @@ class GeneralModeView(APIView):
 
     def post(self, request):
         question = request.data.get("question", "")
-        session_id = request.data.get("session_id")
-        history = _normalize_history(request.data.get("history"))
-        if _is_project_request(question):
-            return Response(
-                {
-                    "answer": (
-                        "This looks like a project request. Please switch to Project Mode so I can use the "
-                        "ZIMSEC template and subject-specific rules."
-                    )
-                }
-            )
-        try:
-            completion, request_meta = _chat_with_fallback(
-                [
-                    {
-                        "role": "system",
-                        "content": (
-                            f"{_ree_identity()} "
-                            "Mode: GENERAL. Provide direct answers with simple explanations. "
-                            "Ask a brief follow-up question if needed."
-                        ),
-                    },
-                    *history,
-                    {"role": "user", "content": question},
-                ],
-                request=request,
-            )
-        except Exception:
-            logger.exception("AI request failed")
-            return Response({"error": "AI service error"}, status=502)
-
-        answer_text = _extract_text(completion)
-        history = _save_history(request, "general", request.data, answer_text)
-        if history:
-            _notify_shared_chat_activity(
-                session_id=session_id,
-                actor=request.user,
-                history_id=history.id,
-            )
-        return Response(
-            {
-                "answer": answer_text,
-                "history_id": history.id if history else None,
-                **request_meta,
-            }
+        system_prompt = (
+            f"{_ree_identity()} "
+            "Mode: GENERAL. Provide direct, useful answers with simple explanations and minimal overhead."
+        )
+        return _respond_to_chat_mode(
+            request,
+            mode="general",
+            system_prompt=system_prompt,
+            user_content=question,
         )
 
 
@@ -563,9 +473,9 @@ class AiApiIndexView(APIView):
             {
                 "detail": "AI API root",
                 "endpoints": {
-                    "study": "/api/ai/study/",
-                    "project": "/api/ai/project/",
                     "general": "/api/ai/general/",
+                    "research": "/api/ai/research/",
+                    "writing": "/api/ai/writing/",
                     "notes": "/api/ai/notes/",
                     "history": "/api/ai/history/",
                     "history_delete_all": "/api/ai/history/delete-all/",
