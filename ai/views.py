@@ -10,6 +10,7 @@ from rest_framework.views import APIView
 import logging
 from .models import ChatHistory, UserAIKey
 from .serializers import ChatHistorySerializer
+from .utils import normalize_ordered_list_numbering
 from notifications.models import Notification
 from notifications.services import create_notification
 from sharing.models import ShareLink, ShareMember
@@ -222,7 +223,7 @@ def _respond_to_chat_mode(request, *, mode, system_prompt, user_content, respons
         logger.exception("AI request failed")
         return Response({"error": "AI service error"}, status=502)
 
-    response_text = _extract_text(completion)
+    response_text = normalize_ordered_list_numbering(_extract_text(completion))
     history_row = _save_history(request, mode, request.data, response_text)
     if history_row:
         _notify_shared_chat_activity(
@@ -416,7 +417,7 @@ class NotesAIView(APIView):
             logger.exception("AI request failed")
             return Response({"error": "AI service error"}, status=502)
 
-        updated_text = _extract_text(completion)
+        updated_text = normalize_ordered_list_numbering(_extract_text(completion))
         history = _save_history(request, "notes", request.data, updated_text)
         if history:
             _notify_shared_chat_activity(
