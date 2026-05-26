@@ -79,3 +79,7 @@ class SetPasswordSerializer(serializers.Serializer):
     def validate_new_password(self, value):
         validate_password(value)
         return value
+
+
+class GoogleLoginSerializer(serializers.Serializer):
+    credential = serializers.CharField()

@@ -4,6 +4,8 @@ import smtplib
 import threading
 import socket
 import json
+import re
+import uuid
 from datetime import timedelta
 from urllib import request as urlrequest
 from urllib import error as urlerror
@@ -22,12 +24,15 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.tokens import RefreshToken, TokenError
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token as google_id_token
 from .authentication import enforce_csrf
 from .serializers import (
     RegisterSerializer,
     PasswordResetRequestSerializer,
     PasswordResetConfirmSerializer,
     SetPasswordSerializer,
+    GoogleLoginSerializer,
 )
 
 logger = logging.getLogger(__name__)
@@ -85,6 +90,21 @@ def _clear_auth_cookies(response):
     refresh_name = getattr(settings, "AUTH_COOKIE_REFRESH", "smart_notes_refresh")
     response.delete_cookie(access_name, path="/")
     response.delete_cookie(refresh_name, path="/")
+
+
+def _unique_username_from_email(email):
+    local_part = (email or "").split("@", 1)[0].strip().lower()
+    base = re.sub(r"[^a-z0-9._-]+", "", local_part)[:20] or "user"
+
+    if not User.objects.filter(username=base).exists():
+        return base
+
+    for _ in range(10):
+        candidate = f"{base}-{uuid.uuid4().hex[:6]}"
+        if not User.objects.filter(username=candidate).exists():
+            return candidate
+
+    return f"{base}-{uuid.uuid4().hex}"
 
 
 def _resolve_reset_url_base():
@@ -259,6 +279,84 @@ class CookieTokenObtainPairView(TokenObtainPairView):
             "csrfToken": csrf_token,
             **_token_meta(),
         }
+        return response
+
+
+class GoogleLoginView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request):
+        serializer = GoogleLoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        credential = (serializer.validated_data.get("credential") or "").strip()
+        if not credential:
+            return Response({"detail": "Google credential is required."}, status=400)
+
+        audiences = [
+            aud.strip()
+            for aud in (getattr(settings, "GOOGLE_OAUTH_ALLOWED_CLIENT_IDS", []) or [])
+            if isinstance(aud, str) and aud.strip()
+        ]
+        if not audiences:
+            return Response({"detail": "Google login is not configured."}, status=503)
+
+        request_adapter = google_requests.Request()
+        idinfo = None
+        last_error = None
+        for audience in audiences:
+            try:
+                idinfo = google_id_token.verify_oauth2_token(
+                    credential, request_adapter, audience=audience
+                )
+                break
+            except Exception as exc:
+                last_error = exc
+
+        if not idinfo:
+            logger.warning("Google ID token verification failed: %s", last_error)
+            return Response({"detail": "Invalid Google credential."}, status=400)
+
+        email = (idinfo.get("email") or "").strip().lower()
+        if not email:
+            return Response({"detail": "Google credential missing email."}, status=400)
+
+        if "email_verified" in idinfo:
+            is_verified = idinfo.get("email_verified")
+            if isinstance(is_verified, str):
+                is_verified = is_verified.strip().lower() in {"1", "true", "t", "yes", "y"}
+            if not bool(is_verified):
+                return Response({"detail": "Google account email is not verified."}, status=400)
+
+        user = User.objects.filter(email__iexact=email).first()
+        created = False
+        if not user:
+            username = _unique_username_from_email(email)
+            user = User(username=username, email=email)
+            user.set_unusable_password()
+
+            given_name = (idinfo.get("given_name") or "").strip()
+            family_name = (idinfo.get("family_name") or "").strip()
+            if given_name:
+                user.first_name = given_name[:150]
+            if family_name:
+                user.last_name = family_name[:150]
+
+            user.save()
+            created = True
+
+        refresh = RefreshToken.for_user(user)
+        access = refresh.access_token
+
+        response = Response(
+            {
+                "detail": "Login successful." if not created else "Account created.",
+                "csrfToken": get_token(request),
+                **_token_meta(),
+            },
+            status=status.HTTP_200_OK,
+        )
+        _set_auth_cookies(response, access_token=str(access), refresh_token=str(refresh))
         return response
 
 
@@ -446,6 +544,7 @@ class AuthApiIndexView(APIView):
                     "csrf": "/api/auth/csrf/",
                     "register": "/api/auth/register/",
                     "login": "/api/auth/login/",
+                    "google": "/api/auth/google/",
                     "refresh": "/api/auth/refresh/",
                     "logout": "/api/auth/logout/",
                     "password_reset": "/api/auth/password-reset/",

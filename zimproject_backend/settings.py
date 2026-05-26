@@ -227,6 +227,18 @@ CORS_ALLOW_HEADERS = list(default_headers) + [
     "x-openrouter-model",
 ]
 
+# Google OAuth (ID token verification for "Continue with Google")
+# Set GOOGLE_OAUTH_CLIENT_ID in your environment.
+GOOGLE_OAUTH_CLIENT_ID = (
+    os.getenv("GOOGLE_OAUTH_CLIENT_ID")
+    or os.getenv("DJANGO_GOOGLE_OAUTH_CLIENT_ID")
+    or ""
+).strip()
+GOOGLE_OAUTH_ALLOWED_CLIENT_IDS = _env_list(
+    "GOOGLE_OAUTH_ALLOWED_CLIENT_IDS",
+    [GOOGLE_OAUTH_CLIENT_ID] if GOOGLE_OAUTH_CLIENT_ID else [],
+)
+
 # OpenRouter API
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
