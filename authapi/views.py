@@ -345,6 +345,9 @@ class GoogleLoginView(APIView):
             user.save()
             created = True
 
+        user.last_login = timezone.now()
+        user.save(update_fields=["last_login"])
+
         refresh = RefreshToken.for_user(user)
         access = refresh.access_token
 
