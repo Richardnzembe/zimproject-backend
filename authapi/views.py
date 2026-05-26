@@ -363,6 +363,20 @@ class GoogleLoginView(APIView):
         return response
 
 
+class GoogleOAuthConfigView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        audiences = [
+            aud.strip()
+            for aud in (getattr(settings, "GOOGLE_OAUTH_ALLOWED_CLIENT_IDS", []) or [])
+            if isinstance(aud, str) and aud.strip()
+        ]
+        client_id = audiences[0] if audiences else ""
+        return Response({"enabled": bool(client_id), "clientId": client_id})
+
+
 class CookieTokenRefreshView(TokenRefreshView):
     permission_classes = [AllowAny]
     authentication_classes = []
@@ -548,6 +562,7 @@ class AuthApiIndexView(APIView):
                     "register": "/api/auth/register/",
                     "login": "/api/auth/login/",
                     "google": "/api/auth/google/",
+                    "google_config": "/api/auth/google/config/",
                     "refresh": "/api/auth/refresh/",
                     "logout": "/api/auth/logout/",
                     "password_reset": "/api/auth/password-reset/",

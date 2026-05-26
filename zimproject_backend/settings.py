@@ -232,6 +232,8 @@ CORS_ALLOW_HEADERS = list(default_headers) + [
 GOOGLE_OAUTH_CLIENT_ID = (
     os.getenv("GOOGLE_OAUTH_CLIENT_ID")
     or os.getenv("DJANGO_GOOGLE_OAUTH_CLIENT_ID")
+    or os.getenv("GOOGLE_CLIENT_ID")
+    or os.getenv("DJANGO_GOOGLE_CLIENT_ID")
     or ""
 ).strip()
 GOOGLE_OAUTH_ALLOWED_CLIENT_IDS = _env_list(
