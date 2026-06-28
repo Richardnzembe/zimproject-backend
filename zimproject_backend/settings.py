@@ -245,7 +245,7 @@ GOOGLE_OAUTH_ALLOWED_CLIENT_IDS = _env_list(
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 ALLOWED_AI_HOSTS = ["openrouter.ai"]
-OPENROUTER_DEFAULT_MODEL = os.getenv("OPENROUTER_DEFAULT_MODEL", "openai/gpt-4o-mini")
+OPENROUTER_DEFAULT_MODEL = os.getenv("OPENROUTER_DEFAULT_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
 
 _raw_ai_secret = (
     os.getenv("AI_KEY_ENCRYPTION_SECRET")

@@ -59,7 +59,7 @@ def _chat(messages, model=None, temperature=0.7, request=None):
         raise RuntimeError("OpenRouter API key missing")
     client, using_user_key = result
 
-    model = model or getattr(settings, "OPENROUTER_DEFAULT_MODEL", "openai/gpt-4o-mini")
+    model = model or getattr(settings, "OPENROUTER_DEFAULT_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
     try:
         return client.chat.completions.create(
             model=model,
@@ -84,7 +84,7 @@ def _requested_model(request):
 
 
 def _chat_with_fallback(messages, temperature=0.7, request=None):
-    default_model = getattr(settings, "OPENROUTER_DEFAULT_MODEL", "openai/gpt-4o-mini")
+    default_model = getattr(settings, "OPENROUTER_DEFAULT_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
     requested_model = _requested_model(request)
 
     if not requested_model or requested_model.lower() == "auto":
