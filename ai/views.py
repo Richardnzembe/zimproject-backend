@@ -206,6 +206,36 @@ def _save_history(request, mode, input_data, response_text):
         return None
 
 
+def _classify_ai_error(exc):
+    msg = str(exc).lower()
+    if "api key" in msg or "authentication" in msg or "unauthorized" in msg:
+        return (
+            "AI service authentication failed. The API key may be missing or invalid.",
+            502,
+        )
+    if "rate" in msg and "limit" in msg:
+        return (
+            "AI service rate limit reached. Please wait a moment and try again.",
+            429,
+        )
+    if "timeout" in msg or "timed out" in msg:
+        return (
+            "AI service took too long to respond. Please try again.",
+            504,
+        )
+    if "model" in msg and ("not found" in msg or "not available" in msg or "does not exist" in msg):
+        return (
+            "The selected AI model is not available. Try switching to a different model.",
+            422,
+        )
+    if isinstance(exc, RuntimeError):
+        return (str(exc), 502)
+    return (
+        "AI service is temporarily unavailable. Please try again in a moment.",
+        502,
+    )
+
+
 def _respond_to_chat_mode(request, *, mode, system_prompt, user_content, response_key="answer"):
     session_id = request.data.get("session_id")
     history = _normalize_history(request.data.get("history"))
@@ -219,9 +249,10 @@ def _respond_to_chat_mode(request, *, mode, system_prompt, user_content, respons
             ],
             request=request,
         )
-    except Exception:
+    except Exception as exc:
         logger.exception("AI request failed")
-        return Response({"error": "AI service error"}, status=502)
+        error_message, status_code = _classify_ai_error(exc)
+        return Response({"error": error_message, "retryable": status_code in (429, 502, 504)}, status=status_code)
 
     response_text = normalize_ordered_list_numbering(_extract_text(completion))
     history_row = _save_history(request, mode, request.data, response_text)
@@ -413,9 +444,10 @@ class NotesAIView(APIView):
                 ],
                 request=request,
             )
-        except Exception:
+        except Exception as exc:
             logger.exception("AI request failed")
-            return Response({"error": "AI service error"}, status=502)
+            error_message, status_code = _classify_ai_error(exc)
+            return Response({"error": error_message, "retryable": status_code in (429, 502, 504)}, status=status_code)
 
         updated_text = normalize_ordered_list_numbering(_extract_text(completion))
         history = _save_history(request, "notes", request.data, updated_text)
