@@ -299,7 +299,7 @@ class GoogleLoginView(APIView):
             if isinstance(aud, str) and aud.strip()
         ]
         if not audiences:
-            return Response({"detail": "Google login is not configured."}, status=503)
+            return Response({"detail": "Google login is not configured. Set GOOGLE_OAUTH_CLIENT_ID or GOOGLE_OAUTH_ALLOWED_CLIENT_IDS in your environment (.env) and restart the server."}, status=503)
 
         request_adapter = google_requests.Request()
         idinfo = None
