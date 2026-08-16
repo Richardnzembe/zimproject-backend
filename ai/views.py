@@ -65,6 +65,7 @@ def _chat(messages, model=None, temperature=0.7, request=None):
             model=model,
             messages=messages,
             temperature=temperature,
+            max_tokens=getattr(settings, "OPENROUTER_MAX_TOKENS", 4096),
         )
     except Exception:
         if using_user_key:
