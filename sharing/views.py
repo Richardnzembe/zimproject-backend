@@ -216,8 +216,29 @@ class ShareLinkListView(APIView):
         session_id = request.query_params.get("session_id")
         note_id = request.query_params.get("note_id")
         task_id = request.query_params.get("task_id")
+        include_received = request.query_params.get("include_received", "").lower() in {
+            "1",
+            "true",
+            "yes",
+        }
 
-        qs = ShareLink.objects.filter(created_by=request.user, revoked_at__isnull=True)
+        # The collaboration panel is also the recipient's way back into content
+        # that has already been shared with them.  Previously this endpoint only
+        # returned links created by the current user, so accepted shares appeared
+        # to vanish from the recipient's control panel.
+        ownership_filter = Q(created_by=request.user)
+        if include_received:
+            ownership_filter |= Q(members__user=request.user)
+        qs = (
+            ShareLink.objects.filter(
+                ownership_filter,
+                revoked_at__isnull=True,
+                expires_at__gt=timezone.now(),
+            )
+            .select_related("created_by")
+            .prefetch_related("members__user")
+            .distinct()
+        )
         if resource_type:
             qs = qs.filter(resource_type=resource_type)
         if session_id:
@@ -227,7 +248,14 @@ class ShareLinkListView(APIView):
         if task_id:
             qs = qs.filter(task_id=task_id)
 
-        data = ShareLinkSerializer(qs, many=True).data
+        shares = list(qs)
+        data = ShareLinkSerializer(shares, many=True).data
+        for item, share in zip(data, shares):
+            item["owner"] = {
+                "id": share.created_by_id,
+                "username": share.created_by.username,
+            }
+            item["is_owner"] = share.created_by_id == request.user.id
         return Response(data)
 
 

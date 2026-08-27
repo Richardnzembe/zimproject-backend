@@ -3,7 +3,7 @@ from django.test import override_settings
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from sharing.models import ShareLink, ShareMember
+from sharing.models import ShareInvite, ShareLink, ShareMember
 from tasks.models import Task
 from notifications.models import Notification
 
@@ -61,6 +61,45 @@ class TaskSharingTests(APITestCase):
         self.assertEqual(self.task.title, "Updated by collaborator")
         self.assertTrue(self.task.is_completed)
         self.assertEqual(self.task.priority, "high")
+
+    def test_accepted_share_is_listed_for_collaborator(self):
+        share = ShareLink.objects.create(
+            resource_type="task",
+            task=self.task,
+            permission="collab",
+            created_by=self.owner,
+        )
+        ShareMember.objects.create(share=share, user=self.collaborator, added_by=self.owner)
+
+        self.client.force_authenticate(self.collaborator)
+        owner_only_res = self.client.get("/api/share/links/")
+        res = self.client.get("/api/share/links/?include_received=1")
+
+        self.assertEqual(owner_only_res.data, [])
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(res.data), 1)
+        self.assertEqual(str(res.data[0]["token"]), str(share.token))
+        self.assertFalse(res.data[0]["is_owner"])
+        self.assertEqual(res.data[0]["owner"]["username"], self.owner.username)
+
+    def test_pending_invite_is_not_listed_as_accepted_share(self):
+        share = ShareLink.objects.create(
+            resource_type="task",
+            task=self.task,
+            permission="collab",
+            created_by=self.owner,
+        )
+        ShareInvite.objects.create(
+            share=share,
+            invited_user=self.collaborator,
+            invited_by=self.owner,
+        )
+
+        self.client.force_authenticate(self.collaborator)
+        res = self.client.get("/api/share/links/?include_received=1")
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data, [])
 
     def test_invite_creates_recipient_notification(self):
         share = ShareLink.objects.create(
